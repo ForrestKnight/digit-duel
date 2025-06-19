@@ -484,34 +484,22 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
    * Securely increments the counter by 1.
    */
   const increment = useCallback(async (): Promise<void> => {
-    console.log('🚀 INCREMENT called at:', new Date().toISOString());
-    try {
-      await executeSecureOperation(
-        'increment',
-        secureIncrementMutation,
-        (current) => current + 1
-      );
-      console.log('✅ INCREMENT completed');
-    } catch (error) {
-      console.error('❌ INCREMENT failed:', error);
-    }
+    await executeSecureOperation(
+      'increment',
+      secureIncrementMutation,
+      (current) => current + 1
+    );
   }, [executeSecureOperation, secureIncrementMutation]);
 
   /**
    * Securely decrements the counter by 1.
    */
   const decrement = useCallback(async (): Promise<void> => {
-    console.log('🚀 DECREMENT called at:', new Date().toISOString());
-    try {
-      await executeSecureOperation(
-        'decrement',
-        secureDecrementMutation,
-        (current) => current - 1
-      );
-      console.log('✅ DECREMENT completed');
-    } catch (error) {
-      console.error('❌ DECREMENT failed:', error);
-    }
+    await executeSecureOperation(
+      'decrement',
+      secureDecrementMutation,
+      (current) => current - 1
+    );
   }, [executeSecureOperation, secureDecrementMutation]);
 
   /**

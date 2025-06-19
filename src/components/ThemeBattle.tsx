@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSecureCounter } from '../hooks/useCounter';
-import { BattleControls } from './BattleControls';
 import { VictoryScreen } from './VictoryScreen';
-import { ThemeIndicator } from './ThemeIndicator';
 import { SoundManager } from './SoundManager';
+import { FloatingBubbles } from './FloatingBubbles';
 
 /**
  * Victory thresholds for theme battle
@@ -39,13 +38,13 @@ export const ThemeBattle: React.FC = () => {
   const [showVictory, setShowVictory] = useState(false);
   const [previousValue, setPreviousValue] = useState<number>(0);
 
-  // Calculate theme balance percentage (-100 to +100)
+  // Calculate theme balance percentage (-100 to +100) - OPTIMISTIC
   const counterValue = counter?.value ?? 0;
   const balancePercentage = Math.max(-100, Math.min(100, 
     (counterValue / VICTORY_THRESHOLDS.TOTAL_RANGE) * 100
   ));
 
-  // Calculate split percentages for each side (0-100% each)
+  // Calculate split percentages for each side (0-100% each) - OPTIMISTIC
   const lightPercentage = Math.max(0, Math.min(100, 50 + balancePercentage / 2));
   const darkPercentage = 100 - lightPercentage;
 
@@ -164,12 +163,14 @@ export const ThemeBattle: React.FC = () => {
               <p className="text-gray-600">Bringing clarity and brightness</p>
             </div>
             
-            <ThemeIndicator
-              theme="light"
-              percentage={lightPercentage}
-              isWinning={balancePercentage > 0}
-              className="mb-4"
-            />
+            {/* Theme stats */}
+            <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3 text-center">
+              <div className="text-sm font-semibold mb-1">Light Forces</div>
+              <div className="text-2xl font-bold">{lightPercentage.toFixed(1)}%</div>
+              <div className="text-xs opacity-75">
+                {balancePercentage > 0 ? 'Advancing!' : 'Defending'}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -198,33 +199,30 @@ export const ThemeBattle: React.FC = () => {
               <p className="text-gray-300">Embracing mystery and depth</p>
             </div>
             
-            <ThemeIndicator
-              theme="dark"
-              percentage={darkPercentage}
-              isWinning={balancePercentage < 0}
-              className="mb-4"
-            />
+            {/* Theme stats */}
+            <div className="bg-black/20 backdrop-blur-sm rounded-lg p-3 text-center">
+              <div className="text-sm font-semibold mb-1">Dark Forces</div>
+              <div className="text-2xl font-bold">{darkPercentage.toFixed(1)}%</div>
+              <div className="text-xs opacity-75">
+                {balancePercentage < 0 ? 'Advancing!' : 'Defending'}
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Battle Controls - Fixed at Bottom */}
-      <div className="absolute bottom-0 left-0 right-0 z-20">
-        <BattleControls
-          onFightForLight={fightForLight}
-          onFightForDark={fightForDark}
-          onReset={reset}
-          isLoading={isLoading}
-          counterValue={counterValue}
-          lightPercentage={lightPercentage}
-          darkPercentage={darkPercentage}
-          error={error}
-        />
-      </div>
+      {/* Floating Bubbles System */}
+      <FloatingBubbles
+        onLightClick={fightForLight}
+        onDarkClick={fightForDark}
+        isActive={!showVictory}
+        lightPercentage={lightPercentage}
+        darkPercentage={darkPercentage}
+      />
 
-      {/* Dividing Line */}
+      {/* Dividing Line - OPTIMISTIC */}
       <div
-        className="absolute top-0 bottom-0 w-1 bg-gradient-to-b from-yellow-400 via-gray-500 to-purple-400 shadow-lg transition-all duration-700 ease-out z-10"
+        className="absolute top-0 bottom-0 w-2 bg-gradient-to-b from-yellow-400 via-gray-500 to-purple-400 shadow-lg transition-all duration-300 ease-out z-10"
         style={{ 
           left: `${lightPercentage}%`,
           transform: 'translateX(-50%)',
@@ -233,6 +231,14 @@ export const ThemeBattle: React.FC = () => {
       >
         {/* Divider effects */}
         <div className="absolute inset-0 animate-pulse bg-gradient-to-b from-yellow-300 to-purple-300 opacity-50" />
+        
+        {/* Current score indicator */}
+        <div 
+          className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 
+                     bg-white rounded-full px-3 py-1 text-xs font-bold text-gray-800 shadow-lg"
+        >
+          {counterValue}
+        </div>
       </div>
 
       {/* Victory Screen Overlay */}
