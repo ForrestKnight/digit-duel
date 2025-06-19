@@ -78,19 +78,21 @@ export const ThemeBattle: React.FC = () => {
     }
   }, [reset]);
 
-  // Enhanced increment for light theme
-  const fightForLight = useCallback(async () => {
+  // Enhanced increment for light theme (with points)
+  const fightForLight = useCallback(async (points: number = 1) => {
     try {
-      await increment();
+      // Use the new multi-point increment function for immediate optimistic update
+      await increment(points);
     } catch (error) {
       console.error('Failed to fight for light:', error);
     }
   }, [increment]);
 
-  // Enhanced decrement for dark theme
-  const fightForDark = useCallback(async () => {
+  // Enhanced decrement for dark theme (with points)
+  const fightForDark = useCallback(async (points: number = 1) => {
     try {
-      await decrement();
+      // Use the new multi-point decrement function for immediate optimistic update
+      await decrement(points);
     } catch (error) {
       console.error('Failed to fight for dark:', error);
     }
