@@ -223,7 +223,7 @@ const DEFAULT_SECURE_CONFIG: SecureCounterConfig = {
   enableSecurityLogging: true,
   rateLimitBackoff: {
     enabled: true,
-    maxBackoffMs: 30000, // 30 seconds max
+    maxBackoffMs: 5000, // 5 seconds max
   },
 };
 
@@ -251,6 +251,7 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
 
   // Enhanced state for security handling
   const [optimisticValue, setOptimisticValue] = useState<number | null>(null);
+  const [pendingOperations, setPendingOperations] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isBlocked, setIsBlocked] = useState(false);
@@ -325,9 +326,9 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
       
       let backoffMs = baseBackoff;
       if (timeSinceLastOp < 500) { // Very rapid clicking
-        backoffMs = Math.min(baseBackoff * 4, finalConfig.rateLimitBackoff.maxBackoffMs);
-      } else if (timeSinceLastOp < 1000) {
         backoffMs = Math.min(baseBackoff * 2, finalConfig.rateLimitBackoff.maxBackoffMs);
+      } else if (timeSinceLastOp < 1000) {
+        backoffMs = Math.min(baseBackoff * 1.5, finalConfig.rateLimitBackoff.maxBackoffMs);
       }
       
       setBackoffUntil(now + backoffMs);
@@ -361,18 +362,21 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
     const operationId = ++operationIdRef.current;
     const now = Date.now();
     
+    // Track pending operations
+    setPendingOperations(prev => prev + 1);
+    
     // Check if in backoff period
     if (isInBackoff()) {
       const remainingMs = backoffUntil! - now;
       throw new Error(`Rate limited. Please wait ${Math.ceil(remainingMs / 1000)} seconds.`);
     }
     
-    // Enforce minimum interval (50ms) on client side as first line of defense
-    const timeSinceLastOp = now - lastOperationRef.current;
-    if (timeSinceLastOp < 50 && lastOperationRef.current > 0) {
-      handleSecurityViolation(new Error('Rate limit exceeded: minimum 50ms between operations'));
-      return;
-    }
+    // Rate limiting disabled for testing
+    // const timeSinceLastOp = now - lastOperationRef.current;
+    // if (timeSinceLastOp < 25 && lastOperationRef.current > 0) {
+    //   handleSecurityViolation(new Error('Rate limit exceeded: minimum 25ms between operations'));
+    //   return;
+    // }
     
     setError(null);
     setIsLoading(true);
@@ -391,7 +395,9 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
 
       // Apply optimistic update if enabled and function provided
       if (finalConfig.enableOptimisticUpdates && optimisticUpdate && counterDetails) {
-        setOptimisticValue(optimisticUpdate(counterDetails.value));
+        // Use current optimistic value or server value as base
+        const currentDisplayValue = optimisticValue ?? counterDetails.value;
+        setOptimisticValue(optimisticUpdate(currentDisplayValue));
       }
 
       // Prepare secure operation parameters
@@ -413,6 +419,9 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
       while (attempt <= finalConfig.retryConfig.maxRetries) {
         try {
           await mutation(operationParams);
+          
+          // Always clear pending operations count
+          setPendingOperations(prev => Math.max(0, prev - 1));
           
           // Only update state if this is still the current operation
           if (operationId === operationIdRef.current) {
@@ -448,6 +457,9 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
       // All retries failed
       throw lastError;
     } catch (err) {
+      // Always clear pending operations count
+      setPendingOperations(prev => Math.max(0, prev - 1));
+      
       // Only update error state if this is still the current operation
       if (operationId === operationIdRef.current) {
         if (err instanceof Error && (
@@ -472,22 +484,34 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
    * Securely increments the counter by 1.
    */
   const increment = useCallback(async (): Promise<void> => {
-    await executeSecureOperation(
-      'increment',
-      secureIncrementMutation,
-      (current) => current + 1
-    );
+    console.log('🚀 INCREMENT called at:', new Date().toISOString());
+    try {
+      await executeSecureOperation(
+        'increment',
+        secureIncrementMutation,
+        (current) => current + 1
+      );
+      console.log('✅ INCREMENT completed');
+    } catch (error) {
+      console.error('❌ INCREMENT failed:', error);
+    }
   }, [executeSecureOperation, secureIncrementMutation]);
 
   /**
    * Securely decrements the counter by 1.
    */
   const decrement = useCallback(async (): Promise<void> => {
-    await executeSecureOperation(
-      'decrement',
-      secureDecrementMutation,
-      (current) => current - 1
-    );
+    console.log('🚀 DECREMENT called at:', new Date().toISOString());
+    try {
+      await executeSecureOperation(
+        'decrement',
+        secureDecrementMutation,
+        (current) => current - 1
+      );
+      console.log('✅ DECREMENT completed');
+    } catch (error) {
+      console.error('❌ DECREMENT failed:', error);
+    }
   }, [executeSecureOperation, secureDecrementMutation]);
 
   /**

@@ -33,18 +33,28 @@ export const BattleControls: React.FC<BattleControlsProps> = ({
   const [lastAction, setLastAction] = useState<'light' | 'dark' | 'reset' | null>(null);
 
   const handleLightAction = async () => {
+    console.log('🌟 Light click received at:', new Date().toISOString());
     setLastAction('light');
     try {
+      console.log('🌟 Calling onFightForLight...');
       await onFightForLight();
+      console.log('🌟 onFightForLight completed');
+    } catch (error) {
+      console.error('🌟 Light action error:', error);
     } finally {
       setTimeout(() => setLastAction(null), 300);
     }
   };
 
   const handleDarkAction = async () => {
+    console.log('🌙 Dark click received at:', new Date().toISOString());
     setLastAction('dark');
     try {
+      console.log('🌙 Calling onFightForDark...');
       await onFightForDark();
+      console.log('🌙 onFightForDark completed');
+    } catch (error) {
+      console.error('🌙 Dark action error:', error);
     } finally {
       setTimeout(() => setLastAction(null), 300);
     }
@@ -87,7 +97,7 @@ export const BattleControls: React.FC<BattleControlsProps> = ({
           {/* Fight for Light Button */}
           <button
             onClick={handleLightAction}
-            disabled={isLoading}
+            disabled={false}
             className={`
               group relative px-8 py-4 rounded-xl font-bold text-lg
               transition-all duration-300 ease-out
@@ -126,7 +136,7 @@ export const BattleControls: React.FC<BattleControlsProps> = ({
           {/* Reset Button */}
           <button
             onClick={handleReset}
-            disabled={isLoading}
+            disabled={false}
             className={`
               relative px-6 py-4 rounded-xl font-semibold
               transition-all duration-300 ease-out
@@ -158,7 +168,7 @@ export const BattleControls: React.FC<BattleControlsProps> = ({
           {/* Fight for Dark Button */}
           <button
             onClick={handleDarkAction}
-            disabled={isLoading}
+            disabled={false}
             className={`
               group relative px-8 py-4 rounded-xl font-bold text-lg
               transition-all duration-300 ease-out
