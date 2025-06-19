@@ -111,28 +111,38 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
     // Start pop animation
     setPoppingBubbles(prev => new Set(prev).add(bubble.bubbleId));
 
-    // Pop the bubble in realtime (this will sync across all clients)
+    // Execute all actions in parallel for immediate response
     try {
-      await realtimePopBubble(bubble.bubbleId);
+      // Pop the bubble in realtime (this will sync across all clients)
+      const popPromise = realtimePopBubble(bubble.bubbleId);
       
-      // Execute the appropriate action with points
-      if (bubble.type === 'light') {
-        await onLightClick(points);
-      } else {
-        await onDarkClick(points);
-      }
+      // Execute the appropriate action with points immediately
+      const actionPromise = bubble.type === 'light' 
+        ? onLightClick(points)
+        : onDarkClick(points);
+      
+      // Wait for both to complete
+      await Promise.all([popPromise, actionPromise]);
+      
     } catch (error) {
       console.error('Bubble click action failed:', error);
+      
+      // Remove from popping state on error
+      setPoppingBubbles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bubble.bubbleId);
+        return newSet;
+      });
     }
 
-    // Clean up popping state after animation
+    // Clean up popping state after a short delay
     setTimeout(() => {
       setPoppingBubbles(prev => {
         const newSet = new Set(prev);
         newSet.delete(bubble.bubbleId);
         return newSet;
       });
-    }, 400);
+    }, 200); // Shorter cleanup delay
   }, [onLightClick, onDarkClick, clickCooldowns, poppingBubbles, realtimePopBubble, bubbleConfig]);
 
   if (!isActive) return null;

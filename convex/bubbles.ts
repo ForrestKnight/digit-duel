@@ -7,8 +7,7 @@ import { v } from "convex/values";
 const GAME_CONFIG = {
   maxBubbles: 40,
   minBubbles: 30,
-  bubbleLifetime: 30000, // 30 seconds max bubble lifetime
-  cleanupInterval: 60000, // Cleanup old bubbles every minute
+  // Bubbles should only be removed when popped, not by age
   sessionTimeout: 300000, // 5 minutes session timeout
 };
 
@@ -65,6 +64,14 @@ export const createBubble = mutation({
         vy: args.vy,
       });
       return existingBubble._id;
+    }
+
+    // Check if we're at max bubbles limit
+    const allBubbles = await ctx.db.query("bubbles").collect();
+    const activeBubbles = allBubbles.filter(bubble => !bubble.isPopping);
+    
+    if (activeBubbles.length >= GAME_CONFIG.maxBubbles) {
+      throw new Error(`Maximum bubble limit reached (${GAME_CONFIG.maxBubbles})`);
     }
 
     // Create new bubble
@@ -144,10 +151,9 @@ export const getBubbles = query({
       .withIndex("by_game_session", (q) => q.eq("gameSessionId", gameSessionId))
       .collect();
 
-    // Filter out old bubbles
-    const now = Date.now();
+    // Only filter out popping bubbles
     return bubbles
-      .filter(bubble => !bubble.isPopping && (now - bubble.createdAt) < GAME_CONFIG.bubbleLifetime)
+      .filter(bubble => !bubble.isPopping)
       .map(bubble => ({
         _id: bubble._id,
         bubbleId: bubble.bubbleId,
@@ -176,10 +182,9 @@ export const getAllBubbles = query({
       .query("bubbles")
       .collect();
 
-    // Filter out old and popping bubbles
-    const now = Date.now();
+    // Only filter out popping bubbles - bubbles persist until manually popped
     return bubbles
-      .filter(bubble => !bubble.isPopping && (now - bubble.createdAt) < GAME_CONFIG.bubbleLifetime)
+      .filter(bubble => !bubble.isPopping)
       .map(bubble => ({
         _id: bubble._id,
         bubbleId: bubble.bubbleId,
@@ -234,20 +239,16 @@ export const updateBubbles = mutation({
 });
 
 /**
- * Cleans up old and popping bubbles.
+ * Cleans up only popping bubbles (bubbles should persist unless manually popped).
  */
 export const cleanupBubbles = mutation({
   args: {},
   handler: async (ctx) => {
-    const now = Date.now();
-    
     // Get all bubbles
     const allBubbles = await ctx.db.query("bubbles").collect();
     
-    // Remove old or popping bubbles
-    const bubblesToDelete = allBubbles.filter(bubble => 
-      bubble.isPopping || (now - bubble.createdAt) > GAME_CONFIG.bubbleLifetime
-    );
+    // Only remove popping bubbles
+    const bubblesToDelete = allBubbles.filter(bubble => bubble.isPopping);
 
     // Delete in parallel
     await Promise.all(
@@ -265,11 +266,9 @@ export const getGameStats = query({
   args: {},
   handler: async (ctx) => {
     const bubbles = await ctx.db.query("bubbles").collect();
-    const now = Date.now();
     
-    const activeBubbles = bubbles.filter(bubble => 
-      !bubble.isPopping && (now - bubble.createdAt) < GAME_CONFIG.bubbleLifetime
-    );
+    // Only filter out popping bubbles
+    const activeBubbles = bubbles.filter(bubble => !bubble.isPopping);
 
     const lightBubbles = activeBubbles.filter(b => b.type === 'light').length;
     const darkBubbles = activeBubbles.filter(b => b.type === 'dark').length;
@@ -281,6 +280,20 @@ export const getGameStats = query({
       maxBubbles: GAME_CONFIG.maxBubbles,
       minBubbles: GAME_CONFIG.minBubbles,
     };
+  },
+});
+
+/**
+ * Resets all bubbles in the game.
+ */
+export const resetAllBubbles = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const allBubbles = await ctx.db.query("bubbles").collect();
+    await Promise.all(
+      allBubbles.map(bubble => ctx.db.delete(bubble._id))
+    );
+    return allBubbles.length;
   },
 });
 

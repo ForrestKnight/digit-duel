@@ -66,6 +66,7 @@ export const useBubbles = (
   // Local state
   const [localBubbles, setLocalBubbles] = useState<LocalBubble[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [recentlyPopped, setRecentlyPopped] = useState<Set<string>>(new Set());
   
   // Refs for tracking
   const nextIdRef = useRef(0);
@@ -114,13 +115,13 @@ export const useBubbles = (
   const syncWithServer = useCallback(() => {
     if (!serverBubbles || !isActive) return;
 
-    const now = Date.now();
-    
-    // Convert server bubbles to local format
-    const serverBubblesLocal: LocalBubble[] = serverBubbles.map((bubble: Bubble) => ({
-      ...bubble,
-      id: bubble.bubbleId,
-    }));
+    // Convert server bubbles to local format, excluding recently popped ones
+    const serverBubblesLocal: LocalBubble[] = serverBubbles
+      .filter((bubble: Bubble) => !recentlyPopped.has(bubble.bubbleId))
+      .map((bubble: Bubble) => ({
+        ...bubble,
+        id: bubble.bubbleId,
+      }));
 
     // Update local state with server bubbles
     setLocalBubbles(prev => {
@@ -128,50 +129,76 @@ export const useBubbles = (
       const serverBubbleIds = new Set(serverBubblesLocal.map(b => b.bubbleId));
       const localBubbleMap = new Map(prev.map(b => [b.bubbleId, b]));
 
-      // Add server bubbles, preserving local animation state
+      // Add server bubbles, preserving local animation state to avoid jitter
       for (const serverBubble of serverBubblesLocal) {
+        // Skip recently popped bubbles
+        if (recentlyPopped.has(serverBubble.bubbleId)) continue;
+        
         const localBubble = localBubbleMap.get(serverBubble.bubbleId);
         if (localBubble) {
-          // Keep local animation state but update core properties
+          // Preserve local position and velocity to avoid jitter
+          // Only sync core properties that don't affect smooth animation
           merged.push({
             ...localBubble,
             type: serverBubble.type,
             size: serverBubble.size,
             depth: serverBubble.depth,
-            // Only update position if it's significantly different (avoid jitter)
-            x: Math.abs(localBubble.x - serverBubble.x) > 5 ? serverBubble.x : localBubble.x,
-            y: Math.abs(localBubble.y - serverBubble.y) > 5 ? serverBubble.y : localBubble.y,
+            // Keep local position and velocity for smooth movement
           });
         } else {
-          // New bubble from server
+          // New bubble from server - use server position
           merged.push(serverBubble);
         }
       }
 
       // Keep local bubbles that aren't on server yet (recently created)
+      // Only keep them for a short time to avoid duplication
+      const now = Date.now();
       for (const localBubble of prev) {
         if (!serverBubbleIds.has(localBubble.bubbleId) && 
-            (now - localBubble.createdAt) < 2000) { // Keep for 2 seconds max
+            !recentlyPopped.has(localBubble.bubbleId) &&
+            (now - localBubble.createdAt) < 1000) { // Keep for 1 second max
           merged.push(localBubble);
         }
       }
 
       return merged;
     });
-  }, [serverBubbles, isActive]);
+  }, [serverBubbles, isActive, recentlyPopped]);
 
   /**
    * Pops a bubble and removes it from local state
    */
   const popBubble = useCallback(async (bubbleId: string): Promise<void> => {
+    // Mark as recently popped to prevent reappearing during sync
+    setRecentlyPopped(prev => new Set(prev).add(bubbleId));
+    
     // Optimistically remove from local state
     setLocalBubbles(prev => prev.filter(b => b.bubbleId !== bubbleId));
     
     // Notify server
     try {
       await popBubbleMutation({ bubbleId });
+      
+      // Clear from recently popped after a delay to ensure server sync is complete
+      setTimeout(() => {
+        setRecentlyPopped(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(bubbleId);
+          return newSet;
+        });
+      }, 2000); // Keep in recently popped for 2 seconds
+      
     } catch (error) {
       console.error('Failed to pop bubble on server:', error);
+      
+      // Remove from recently popped on error and re-sync
+      setRecentlyPopped(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bubbleId);
+        return newSet;
+      });
+      
       // Re-sync with server on error
       syncWithServer();
     }
@@ -239,45 +266,56 @@ export const useBubbles = (
   }, [isActive, updateBubblesMutation]);
 
   /**
-   * Spawns new bubbles to maintain minimum count
+   * Spawns new bubbles to maintain minimum count based on server state
    */
   const spawnBubbles = useCallback(() => {
-    if (!isActive) return;
+    if (!isActive || !serverBubbles) return;
 
-    setLocalBubbles(prev => {
-      if (prev.length >= BUBBLE_CONFIG.maxBubbles) return prev;
-      
-      const shouldSpawn = prev.length < BUBBLE_CONFIG.minBubbles || 
-                         (prev.length < BUBBLE_CONFIG.maxBubbles && Math.random() < 0.1);
-      
-      if (!shouldSpawn) return prev;
+    // Use server bubble count to determine if we need to spawn
+    const totalServerBubbles = serverBubbles.length;
+    
+    // Don't spawn if we're at or above max bubbles
+    if (totalServerBubbles >= BUBBLE_CONFIG.maxBubbles) return;
+    
+    // Only spawn if we're below minimum or randomly when below max
+    const shouldSpawn = totalServerBubbles < BUBBLE_CONFIG.minBubbles || 
+                       (totalServerBubbles < BUBBLE_CONFIG.maxBubbles && Math.random() < 0.02); // Much lower probability
+    
+    if (!shouldSpawn) return;
 
-      const newBubble = createBubble();
-      
-      // Send to server
-      createBubbleMutation({
-        bubbleId: newBubble.bubbleId,
-        type: newBubble.type,
-        x: newBubble.x,
-        y: newBubble.y,
-        size: newBubble.size,
-        vx: newBubble.vx,
-        vy: newBubble.vy,
-        createdAt: newBubble.createdAt,
-        depth: newBubble.depth,
-        gameSessionId: newBubble.gameSessionId,
-      }).catch(console.error);
-
-      return [...prev, newBubble];
-    });
-  }, [isActive, createBubble, createBubbleMutation]);
+    const newBubble = createBubble();
+    
+    // Add to local state optimistically
+    setLocalBubbles(prev => [...prev, newBubble]);
+    
+    // Send to server
+    createBubbleMutation({
+      bubbleId: newBubble.bubbleId,
+      type: newBubble.type,
+      x: newBubble.x,
+      y: newBubble.y,
+      size: newBubble.size,
+      vx: newBubble.vx,
+      vy: newBubble.vy,
+      createdAt: newBubble.createdAt,
+      depth: newBubble.depth,
+      gameSessionId: newBubble.gameSessionId,
+    }).catch(console.error);
+  }, [isActive, serverBubbles, createBubble, createBubbleMutation]);
 
   /**
-   * Initializes the game session with bubbles
+   * Initializes the game session with bubbles only if no bubbles exist
    */
   const initializeGame = useCallback(async () => {
     if (isInitialized || !isActive) return;
 
+    // Check if bubbles already exist on the server
+    if (serverBubbles && serverBubbles.length > 0) {
+      setIsInitialized(true);
+      return;
+    }
+
+    // Only initialize if no bubbles exist
     const initialBubbles = Array.from({ length: BUBBLE_CONFIG.initialBubbles }, () => {
       const bubble = createBubble();
       return {
@@ -302,7 +340,7 @@ export const useBubbles = (
     } catch (error) {
       console.error('Failed to initialize game session:', error);
     }
-  }, [isInitialized, isActive, gameSessionId, createBubble, initializeGameMutation]);
+  }, [isInitialized, isActive, gameSessionId, serverBubbles, createBubble, initializeGameMutation]);
 
   // Sync with server when server state changes
   useEffect(() => {
