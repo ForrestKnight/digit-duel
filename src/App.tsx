@@ -1,7 +1,7 @@
 import React from 'react';
 import { ConvexProvider, ConvexReactClient } from 'convex/react';
 import { CounterErrorBoundary } from './components/ErrorBoundary';
-import Counter from './components/Counter';
+import ThemeBattle from './components/ThemeBattle';
 import './App.css';
 
 /**
@@ -34,7 +34,7 @@ function App(): React.ReactElement {
           console.error('Application error:', error, errorInfo);
         }}
       >
-        <Counter />
+        <ThemeBattle />
       </CounterErrorBoundary>
     </ConvexProvider>
   );
