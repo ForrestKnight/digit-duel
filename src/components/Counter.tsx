@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useCounter } from '../hooks/useCounter';
+import { useSecureCounter } from '../hooks/useCounter';
 import { CounterDisplay, CounterDisplaySkeleton, CounterDisplayError } from './CounterDisplay';
 import { CounterButton, CounterButtonGroup, CounterButtonSkeleton } from './CounterButton';
 
@@ -75,7 +75,7 @@ export const Counter: React.FC = () => {
     decrement,
     reset,
     refresh,
-  } = useCounter();
+  } = useSecureCounter();
 
   const [previousValue, setPreviousValue] = useState<number | undefined>(undefined);
 

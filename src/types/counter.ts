@@ -134,10 +134,124 @@ export const CounterErrorType = {
   NETWORK_ERROR: 'NETWORK_ERROR',
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   CONCURRENCY_ERROR: 'CONCURRENCY_ERROR',
+  RATE_LIMIT_ERROR: 'RATE_LIMIT_ERROR',
+  SECURITY_ERROR: 'SECURITY_ERROR',
+  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY',
+  AUTHENTICATION_ERROR: 'AUTHENTICATION_ERROR',
   UNKNOWN_ERROR: 'UNKNOWN_ERROR',
 } as const;
 
 export type CounterErrorType = typeof CounterErrorType[keyof typeof CounterErrorType];
+
+/**
+ * Security-specific error types for detailed classification.
+ */
+export const SecurityErrorType = {
+  RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
+  INVALID_INPUT: 'INVALID_INPUT',
+  AUTOMATED_BEHAVIOR: 'AUTOMATED_BEHAVIOR',
+  EXCESSIVE_REQUESTS: 'EXCESSIVE_REQUESTS',
+  MALICIOUS_PATTERN: 'MALICIOUS_PATTERN',
+  CLIENT_TAMPERING: 'CLIENT_TAMPERING',
+} as const;
+
+export type SecurityErrorType = typeof SecurityErrorType[keyof typeof SecurityErrorType];
+
+/**
+ * Rate limiting configuration for different operation types.
+ */
+export interface RateLimitConfig {
+  /** Minimum time between operations in milliseconds */
+  readonly minInterval: number;
+  /** Maximum operations per time window */
+  readonly maxOperations: number;
+  /** Time window in milliseconds */
+  readonly windowMs: number;
+  /** Exponential backoff multiplier for violations */
+  readonly backoffMultiplier: number;
+  /** Maximum backoff time in milliseconds */
+  readonly maxBackoffMs: number;
+}
+
+/**
+ * Security violation details for logging and tracking.
+ */
+export interface SecurityViolation {
+  /** Type of security violation */
+  readonly type: SecurityErrorType;
+  /** Timestamp of the violation */
+  readonly timestamp: number;
+  /** Severity level of the violation */
+  readonly severity: 'low' | 'medium' | 'high' | 'critical';
+  /** Additional context about the violation */
+  readonly context: Record<string, unknown>;
+  /** User identifier (if available) */
+  readonly userId?: string;
+  /** Client fingerprint for tracking */
+  readonly fingerprint?: string;
+}
+
+/**
+ * Rate limiting state for tracking user behavior.
+ */
+export interface RateLimitState {
+  /** Last operation timestamp */
+  readonly lastOperation: number;
+  /** Number of operations in current window */
+  readonly operationCount: number;
+  /** Current backoff period in milliseconds */
+  readonly backoffMs: number;
+  /** Number of violations */
+  readonly violationCount: number;
+  /** Whether user is currently blocked */
+  readonly isBlocked: boolean;
+  /** Timestamp when block expires */
+  readonly blockExpiresAt?: number;
+}
+
+/**
+ * Server-side validation result.
+ */
+export interface ValidationResult {
+  /** Whether the validation passed */
+  readonly isValid: boolean;
+  /** Validation error messages */
+  readonly errors: readonly string[];
+  /** Security violations detected */
+  readonly violations: readonly SecurityViolation[];
+  /** Whether the request should be blocked */
+  readonly shouldBlock: boolean;
+}
+
+/**
+ * Security-enhanced operation context.
+ */
+export interface SecureOperationContext {
+  /** Operation type being performed */
+  readonly operation: CounterOperation;
+  /** Client timestamp of the request */
+  readonly clientTimestamp: number;
+  /** Client fingerprint for tracking */
+  readonly fingerprint: string;
+  /** Request metadata */
+  readonly metadata: Record<string, unknown>;
+}
+
+/**
+ * Security monitoring configuration.
+ */
+export interface SecurityConfig {
+  /** Rate limiting settings */
+  readonly rateLimit: RateLimitConfig;
+  /** Enable automated behavior detection */
+  readonly enableBehaviorAnalysis: boolean;
+  /** Enable comprehensive logging */
+  readonly enableSecurityLogging: boolean;
+  /** Threshold for suspicious activity detection */
+  readonly suspiciousActivityThreshold: number;
+  /** Enable client fingerprinting */
+  readonly enableFingerprinting: boolean;
+}
 
 /**
  * Structured error information for counter operations.
