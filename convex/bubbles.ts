@@ -299,6 +299,7 @@ export const resetAllBubbles = mutation({
 
 /**
  * Initializes a game session with initial bubbles.
+ * Only creates bubbles if none exist to prevent race conditions.
  * 
  * @param gameSessionId - The game session ID
  * @param initialBubbles - Array of initial bubbles to create
@@ -319,27 +320,31 @@ export const initializeGameSession = mutation({
     })),
   },
   handler: async (ctx, { gameSessionId, initialBubbles }) => {
-    // Clean up any existing bubbles for this session
+    // Check if any bubbles already exist globally (since we use global session)
     const existingBubbles = await ctx.db
       .query("bubbles")
-      .withIndex("by_game_session", (q) => q.eq("gameSessionId", gameSessionId))
       .collect();
 
-    await Promise.all(
-      existingBubbles.map(bubble => ctx.db.delete(bubble._id))
-    );
+    // Only initialize if no bubbles exist at all to prevent race conditions
+    if (existingBubbles.length > 0) {
+      return 0; // Already initialized
+    }
 
-    // Create new bubbles
-    await Promise.all(
-      initialBubbles.map(bubble =>
-        ctx.db.insert("bubbles", {
-          ...bubble,
-          gameSessionId,
-        })
-      )
-    );
-
-    return initialBubbles.length;
+    // Create new bubbles only if none exist
+    try {
+      await Promise.all(
+        initialBubbles.map(bubble =>
+          ctx.db.insert("bubbles", {
+            ...bubble,
+            gameSessionId,
+          })
+        )
+      );
+      return initialBubbles.length;
+    } catch (error) {
+      console.error('Error initializing bubbles:', error);
+      return 0;
+    }
   },
 });
 

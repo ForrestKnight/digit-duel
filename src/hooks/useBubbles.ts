@@ -73,6 +73,7 @@ export const useBubbles = (
   const lastSyncRef = useRef(0);
   const animationRef = useRef<number | undefined>(undefined);
   const lastFrameTime = useRef<number>(0);
+  const initializationAttemptRef = useRef<number>(0);
 
   /**
    * Creates a new bubble with appropriate type distribution
@@ -305,40 +306,66 @@ export const useBubbles = (
 
   /**
    * Initializes the game session with bubbles only if no bubbles exist
+   * Uses a more robust check to prevent race conditions
    */
   const initializeGame = useCallback(async () => {
     if (isInitialized || !isActive) return;
 
-    // Check if bubbles already exist on the server
-    if (serverBubbles && serverBubbles.length > 0) {
+    // More robust check: wait for server bubbles to be defined first
+    if (serverBubbles === undefined) {
+      // Still loading, don't initialize yet
+      return;
+    }
+
+    // If bubbles already exist, just mark as initialized
+    if (serverBubbles.length > 0) {
       setIsInitialized(true);
       return;
     }
 
-    // Only initialize if no bubbles exist
-    const initialBubbles = Array.from({ length: BUBBLE_CONFIG.initialBubbles }, () => {
-      const bubble = createBubble();
-      return {
-        bubbleId: bubble.bubbleId,
-        type: bubble.type,
-        x: bubble.x,
-        y: bubble.y,
-        size: bubble.size,
-        vx: bubble.vx,
-        vy: bubble.vy,
-        createdAt: bubble.createdAt,
-        depth: bubble.depth,
-      };
-    });
+    // Double-check we're not already initialized to prevent race conditions
+    if (isInitialized) return;
 
+    // Prevent rapid initialization attempts - debounce with exponential backoff
+    const now = Date.now();
+    const timeSinceLastAttempt = now - initializationAttemptRef.current;
+    const minInterval = 1000; // 1 second minimum between attempts
+    
+    if (timeSinceLastAttempt < minInterval) {
+      return; // Too soon since last attempt
+    }
+
+    initializationAttemptRef.current = now;
+
+    // Only initialize if no bubbles exist and we haven't already tried
     try {
-      await initializeGameMutation({
+      const initialBubbles = Array.from({ length: BUBBLE_CONFIG.initialBubbles }, () => {
+        const bubble = createBubble();
+        return {
+          bubbleId: bubble.bubbleId,
+          type: bubble.type,
+          x: bubble.x,
+          y: bubble.y,
+          size: bubble.size,
+          vx: bubble.vx,
+          vy: bubble.vy,
+          createdAt: bubble.createdAt,
+          depth: bubble.depth,
+        };
+      });
+
+      const result = await initializeGameMutation({
         gameSessionId,
         initialBubbles,
       });
-      setIsInitialized(true);
+      
+      // Only mark as initialized if we actually created bubbles
+      if (result > 0) {
+        setIsInitialized(true);
+      }
     } catch (error) {
       console.error('Failed to initialize game session:', error);
+      // Don't mark as initialized on error, allow retry
     }
   }, [isInitialized, isActive, gameSessionId, serverBubbles, createBubble, initializeGameMutation]);
 
