@@ -31,6 +31,71 @@
   }
 }
 
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes success-flash {
+  0% {
+    background-color: rgb(34, 197, 94); /* green-500 */
+  }
+  50% {
+    background-color: rgb(22, 163, 74); /* green-600 */
+  }
+  100% {
+    background-color: rgb(34, 197, 94);
+  }
+}
+
+@keyframes error-flash {
+  0% {
+    background-color: rgb(239, 68, 68); /* red-500 */
+  }
+  50% {
+    background-color: rgb(220, 38, 38); /* red-600 */
+  }
+  100% {
+    background-color: rgb(239, 68, 68);
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.8), 0 0 30px rgba(59, 130, 246, 0.6);
+  }
+}
+
 /* Custom classes */
 .animate-pulse-gentle {
   animation: pulse-gentle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;

@@ -67,6 +67,7 @@ export const CounterButton: React.FC<CounterButtonProps> = ({
   label,
   className = '',
 }) => {
+  const [feedback, setFeedback] = React.useState<'success' | 'error' | null>(null);
   const config = BUTTON_CONFIG[operation];
   const displayLabel = label || config.defaultLabel;
   const isDisabled = disabled || loading;
@@ -81,8 +82,13 @@ export const CounterButton: React.FC<CounterButtonProps> = ({
 
     try {
       await onClick();
+      // Show success feedback
+      setFeedback('success');
+      setTimeout(() => setFeedback(null), 600);
     } catch (error) {
-      // Error handling is managed by the parent component/hook
+      // Show error feedback
+      setFeedback('error');
+      setTimeout(() => setFeedback(null), 600);
       console.error(`Error executing ${operation} operation:`, error);
     }
   };
@@ -115,12 +121,14 @@ export const CounterButton: React.FC<CounterButtonProps> = ({
         min-w-[120px] h-[60px]
         focus:outline-none
         select-none user-select-none
+        ${feedback === 'success' ? 'animate-success-flash' : ''}
+        ${feedback === 'error' ? 'animate-error-flash animate-shake' : ''}
         ${config.baseStyles}
         ${!isDisabled && config.hoverStyles}
         ${!isDisabled && config.activeStyles}
-        ${!isDisabled && 'hover:scale-105 active:scale-95'}
+        ${!isDisabled && 'hover:scale-105 active:scale-95 hover:shadow-lg'}
         ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-        ${loading ? 'cursor-wait' : ''}
+        ${loading ? 'cursor-wait animate-pulse' : ''}
         ${className}
       `}
     >
