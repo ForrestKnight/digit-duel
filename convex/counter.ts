@@ -92,7 +92,7 @@ async function validateSecureOperation(
     .first();
 
   if (rateLimitState) {
-    const timeSinceLastOp = now - rateLimitState.lastOperation;
+    // const timeSinceLastOp = now - rateLimitState.lastOperation;
 
     // Rate limiting disabled for testing
     // if (timeSinceLastOp < 25) {
@@ -107,7 +107,6 @@ async function validateSecureOperation(
     //     },
     //   });
     // }
-    }
 
     // Check if client is blocked
     if (rateLimitState.isBlocked && rateLimitState.blockExpiresAt && now < rateLimitState.blockExpiresAt) {

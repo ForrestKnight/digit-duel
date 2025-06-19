@@ -113,5 +113,38 @@ export default defineSchema({
     .index("by_fingerprint", ["fingerprint"])
     .index("by_operation", ["operation", "timestamp"])
     .index("by_success", ["success", "timestamp"]),
+
+  /**
+   * Floating bubbles for realtime synchronization.
+   * Stores the state of all bubbles across all clients.
+   */
+  bubbles: defineTable({
+    /** Unique identifier for the bubble */
+    bubbleId: v.string(),
+    /** Type of bubble - light or dark */
+    type: v.union(v.literal("light"), v.literal("dark")),
+    /** X position as percentage (0-100) */
+    x: v.number(),
+    /** Y position as percentage (0-100) */
+    y: v.number(),
+    /** Size level (1-4) */
+    size: v.number(),
+    /** Velocity X */
+    vx: v.number(),
+    /** Velocity Y */
+    vy: v.number(),
+    /** When the bubble was created */
+    createdAt: v.number(),
+    /** Z-index depth for layering */
+    depth: v.number(),
+    /** Whether bubble is currently being popped */
+    isPopping: v.optional(v.boolean()),
+    /** Game session ID for cleanup */
+    gameSessionId: v.string(),
+  })
+    .index("by_bubble_id", ["bubbleId"])
+    .index("by_game_session", ["gameSessionId"])
+    .index("by_created_at", ["createdAt"])
+    .index("by_type", ["type"]),
 });
 

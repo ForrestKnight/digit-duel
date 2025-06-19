@@ -26,7 +26,6 @@ const VICTORY_THRESHOLDS = {
 export const ThemeBattle: React.FC = () => {
   const {
     counter,
-    isLoading,
     error,
     increment,
     decrement,
@@ -81,8 +80,10 @@ export const ThemeBattle: React.FC = () => {
   // Enhanced increment for light theme (with points)
   const fightForLight = useCallback(async (points: number = 1) => {
     try {
-      // Use the new multi-point increment function for immediate optimistic update
-      await increment(points);
+      // Execute multiple increments for the given points
+      for (let i = 0; i < points; i++) {
+        await increment();
+      }
     } catch (error) {
       console.error('Failed to fight for light:', error);
     }
@@ -91,8 +92,10 @@ export const ThemeBattle: React.FC = () => {
   // Enhanced decrement for dark theme (with points)
   const fightForDark = useCallback(async (points: number = 1) => {
     try {
-      // Use the new multi-point decrement function for immediate optimistic update
-      await decrement(points);
+      // Execute multiple decrements for the given points
+      for (let i = 0; i < points; i++) {
+        await decrement();
+      }
     } catch (error) {
       console.error('Failed to fight for dark:', error);
     }

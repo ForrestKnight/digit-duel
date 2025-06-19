@@ -251,7 +251,6 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
 
   // Enhanced state for security handling
   const [optimisticValue, setOptimisticValue] = useState<number | null>(null);
-  const [pendingOperations, setPendingOperations] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isBlocked, setIsBlocked] = useState(false);
@@ -362,8 +361,7 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
     const operationId = ++operationIdRef.current;
     const now = Date.now();
     
-    // Track pending operations
-    setPendingOperations(prev => prev + 1);
+    // Track pending operations (removed for simplicity)
     
     // Check if in backoff period
     if (isInBackoff()) {
@@ -420,9 +418,6 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
         try {
           await mutation(operationParams);
           
-          // Always clear pending operations count
-          setPendingOperations(prev => Math.max(0, prev - 1));
-          
           // Only update state if this is still the current operation
           if (operationId === operationIdRef.current) {
             setOptimisticValue(null); // Clear optimistic value
@@ -457,9 +452,6 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
       // All retries failed
       throw lastError;
     } catch (err) {
-      // Always clear pending operations count
-      setPendingOperations(prev => Math.max(0, prev - 1));
-      
       // Only update error state if this is still the current operation
       if (operationId === operationIdRef.current) {
         if (err instanceof Error && (

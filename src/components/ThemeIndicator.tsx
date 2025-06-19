@@ -22,7 +22,7 @@ export const ThemeIndicator: React.FC<ThemeIndicatorProps> = ({
   isWinning,
   className = '',
 }) => {
-  const isLight = theme === 'light';
+  // const isLight = theme === 'light';
   
   const themeConfig = {
     light: {
