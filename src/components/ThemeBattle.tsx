@@ -166,27 +166,6 @@ const fightForDark = useCallback(async () => {
     }
   }, [decrement]);
 
-  // Test function for 10 light clicks
-  const testLight10 = useCallback(async () => {
-    try {
-      // Execute all 10 increments simultaneously
-      const promises = Array.from({ length: 10 }, () => increment());
-      await Promise.all(promises);
-    } catch (error) {
-      console.error('Failed to perform test light clicks:', error);
-    }
-  }, [increment]);
-
-  // Test function for 10 dark clicks
-  const testDark10 = useCallback(async () => {
-    try {
-      // Execute all 10 decrements simultaneously
-      const promises = Array.from({ length: 10 }, () => decrement());
-      await Promise.all(promises);
-    } catch (error) {
-      console.error('Failed to perform test dark clicks:', error);
-    }
-  }, [decrement]);
 
   // Loading state
   if (!counter && !error) {
@@ -359,14 +338,14 @@ const fightForDark = useCallback(async () => {
       <div className="absolute top-4 left-4 z-20 bg-black/80 backdrop-blur-sm rounded border border-gray-600 p-4 text-white font-mono">
         <div className="text-xs opacity-75 mb-3 text-center">// battle_stats</div>
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <span className="flex items-center gap-2">
               <span>🌅</span>
               <span className="text-gray-300 text-sm">light_wins</span>
             </span>
             <span className="font-bold text-lg">{lightWins}</span>
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <span className="flex items-center gap-2">
               <span>🌌</span>
               <span className="text-gray-300 text-sm">dark_wins</span>
@@ -380,28 +359,6 @@ const fightForDark = useCallback(async () => {
             <div className="font-bold text-xl">{countdown}s</div>
           </div>
         )}
-      </div>
-
-      {/* Test Controls Panel */}
-      <div className="absolute top-4 right-4 z-20 bg-black/80 backdrop-blur-sm rounded border border-gray-600 p-4 text-white font-mono">
-        <div className="text-xs opacity-75 mb-3 text-center">// debug_controls</div>
-        <div className="space-y-2">
-          <button
-            onClick={testLight10}
-            className="w-full px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white font-mono rounded border border-gray-500 transition-colors text-xs"
-            title="Add 10 points for Light mode (testing)"
-          >
-            🌅 light += 10
-          </button>
-          <button
-            onClick={testDark10}
-            className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white font-mono rounded border border-gray-500 transition-colors text-xs"
-            title="Add 10 points for Dark mode (testing)"
-          >
-            🌌 dark += 10
-          </button>
-        </div>
-        <div className="text-xs opacity-60 mt-2 text-center">dev_mode_only</div>
       </div>
 
       {/* Accessibility Announcements */}

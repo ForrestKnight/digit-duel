@@ -70,9 +70,13 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
 
     const colors = themeColors[bubble.type];
 
-    // Simple pulsing animation
-    const baseScale = 1 + Math.sin(Date.now() * 0.003 + bubble.bubbleId.charCodeAt(0)) * 0.03;
-
+    // Create unique animation parameters for each bubble based on its ID
+    const bubbleHash = bubble.bubbleId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    
+    // Generate unique animation duration and delay for each bubble
+    const animationDuration = 2 + (bubbleHash % 1000) / 500; // 2s to 4s duration
+    const animationDelay = -(bubbleHash % 2000) / 1000; // 0s to -2s delay (negative for immediate start)
+    
     return {
       width: style.size,
       height: style.size,
@@ -83,7 +87,8 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
       borderColor: colors.border,
       boxShadow: `${colors.glow}, ${colors.shadow}, inset 0 0 20px rgba(255, 255, 255, 0.3)`,
       zIndex: bubble.size * 10,
-      transform: `scale(${baseScale})`,
+      animation: `floatUp ${animationDuration}s ease-in-out infinite`,
+      animationDelay: `${animationDelay}s`,
     };
   }, []);
 

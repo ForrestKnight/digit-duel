@@ -71,7 +71,6 @@ export const useBubbles = (
   const nextIdRef = useRef(0);
   const lastSyncRef = useRef(0);
   const animationRef = useRef<number | undefined>(undefined);
-  const lastFrameTime = useRef<number>(0);
   const initializationAttemptRef = useRef<number>(0);
 
   /**
@@ -106,11 +105,11 @@ export const useBubbles = (
       bubbleId,
       id: bubbleId, // For React keys
       type,
-      x: Math.random() * 90 + 5, // 5% to 95%
-      y: Math.random() * 80 + 10, // 10% to 90%
+      x: Math.random() * 90 + 5, // 5% to 95% - random spawn position
+      y: Math.random() * 80 + 10, // 10% to 90% - random spawn position
       size,
-      vx: (Math.random() - 0.5) * BUBBLE_CONFIG.baseSpeed,
-      vy: (Math.random() - 0.5) * BUBBLE_CONFIG.baseSpeed,
+      vx: 0, // No horizontal movement - stationary
+      vy: 0, // No vertical movement - stationary
       createdAt: now,
       depth: size,
       gameSessionId,
@@ -118,11 +117,12 @@ export const useBubbles = (
   }, [lightPercentage, darkPercentage, gameSessionId]);
 
   /**
-   * Synchronizes local bubbles with server state
+   * Synchronizes local bubbles with server state - SERVER IS AUTHORITATIVE
    */
   const syncWithServer = useCallback(() => {
     if (!serverBubbles || !isActive) return;
 
+    // SERVER IS THE SINGLE SOURCE OF TRUTH
     // Convert server bubbles to local format, excluding recently popped ones
     const serverBubblesLocal: LocalBubble[] = serverBubbles
       .filter((bubble: Bubble) => !recentlyPopped.has(bubble.bubbleId))
@@ -131,46 +131,21 @@ export const useBubbles = (
         id: bubble.bubbleId,
       }));
 
-    // Update local state with server bubbles
+    // Replace local state with server state (with minimal optimistic updates)
     setLocalBubbles(prev => {
-      const merged: LocalBubble[] = [];
-      const serverBubbleIds = new Set(serverBubblesLocal.map(b => b.bubbleId));
-      const localBubbleMap = new Map(prev.map(b => [b.bubbleId, b]));
-
-      // Add server bubbles, preserving local animation state to avoid jitter
-      for (const serverBubble of serverBubblesLocal) {
-        // Skip recently popped bubbles
-        if (recentlyPopped.has(serverBubble.bubbleId)) continue;
-        
-        const localBubble = localBubbleMap.get(serverBubble.bubbleId);
-        if (localBubble) {
-          // Preserve local position and velocity to avoid jitter
-          // Only sync core properties that don't affect smooth animation
-          merged.push({
-            ...localBubble,
-            type: serverBubble.type,
-            size: serverBubble.size,
-            depth: serverBubble.depth,
-            // Keep local position and velocity for smooth movement
-          });
-        } else {
-          // New bubble from server - use server position
-          merged.push(serverBubble);
-        }
-      }
-
-      // Keep local bubbles that aren't on server yet (recently created)
-      // Only keep them for a short time to avoid duplication
       const now = Date.now();
-      for (const localBubble of prev) {
-        if (!serverBubbleIds.has(localBubble.bubbleId) && 
-            !recentlyPopped.has(localBubble.bubbleId) &&
-            (now - localBubble.createdAt) < 1000) { // Keep for 1 second max
-          merged.push(localBubble);
-        }
-      }
-
-      return merged;
+      const optimisticGracePeriod = 500; // Very short grace period for optimistic updates
+      
+      // Keep only very recent local bubbles that might not be synced to server yet
+      const recentOptimisticBubbles = prev.filter(localBubble => 
+        !localBubble._id && // Not from server
+        (now - localBubble.createdAt) < optimisticGracePeriod && // Very recent
+        !recentlyPopped.has(localBubble.bubbleId) && // Not popped
+        !serverBubbles.some(s => s.bubbleId === localBubble.bubbleId) // Not already on server
+      );
+      
+      // Combine server bubbles (authoritative) with recent optimistic bubbles
+      return [...serverBubblesLocal, ...recentOptimisticBubbles];
     });
   }, [serverBubbles, isActive, recentlyPopped]);
 
@@ -252,65 +227,33 @@ export const useBubbles = (
   }, [popBubbleMutation, syncWithServer, createBubble, createBubbleMutation, localBubbles]);
 
   /**
-   * Updates bubble positions and syncs with server periodically
+   * Updates bubble syncing with server periodically (bubbles are stationary now)
    */
   const updateBubbles = useCallback(() => {
     if (!isActive) return;
 
     const now = Date.now();
-    const deltaTime = lastFrameTime.current ? (now - lastFrameTime.current) / 16.67 : 1;
-    lastFrameTime.current = now;
-
-    setLocalBubbles(prev => {
-      const updated = prev.map(bubble => {
-        // Update position with delta time for smooth movement
-        let newX = bubble.x + (bubble.vx * deltaTime);
-        let newY = bubble.y + (bubble.vy * deltaTime);
-        let newVx = bubble.vx;
-        let newVy = bubble.vy;
-
-        // Bounce off edges
-        if (newX <= 0 || newX >= 100) {
-          newVx = -newVx;
-          newX = Math.max(0, Math.min(100, newX));
-        }
-        if (newY <= 0 || newY >= 100) {
-          newVy = -newVy;
-          newY = Math.max(0, Math.min(100, newY));
-        }
-
-        return {
-          ...bubble,
-          x: newX,
-          y: newY,
-          vx: newVx,
-          vy: newVy,
-        };
-      });
-
-      // Sync with server periodically
-      if (now - lastSyncRef.current > BUBBLE_CONFIG.syncInterval) {
-        lastSyncRef.current = now;
+    
+    // Sync with server periodically (no position updates needed since bubbles are stationary)
+    if (now - lastSyncRef.current > BUBBLE_CONFIG.syncInterval) {
+      lastSyncRef.current = now;
+      
+      // Since bubbles are stationary, we only need to sync new bubbles that haven't been sent to server yet
+      const localOnlyBubbles = localBubbles.filter(b => !b._id); // Only sync bubbles that originated locally
+      
+      if (localOnlyBubbles.length > 0) {
+        const updates = localOnlyBubbles.map(b => ({
+          bubbleId: b.bubbleId,
+          x: b.x,
+          y: b.y,
+          vx: b.vx, // Will be 0 for stationary bubbles
+          vy: b.vy, // Will be 0 for stationary bubbles
+        }));
         
-        // Prepare updates for server
-        const updates = updated
-          .filter(b => !b._id) // Only sync bubbles that originated locally
-          .map(b => ({
-            bubbleId: b.bubbleId,
-            x: b.x,
-            y: b.y,
-            vx: b.vx,
-            vy: b.vy,
-          }));
-
-        if (updates.length > 0) {
-          updateBubblesMutation({ bubbles: updates }).catch(console.error);
-        }
+        updateBubblesMutation({ bubbles: updates }).catch(console.error);
       }
-
-      return updated;
-    });
-  }, [isActive, updateBubblesMutation]);
+    }
+  }, [isActive, updateBubblesMutation, localBubbles]);
 
   /**
    * Spawns new bubbles to maintain minimum count based on server state
@@ -355,42 +298,36 @@ export const useBubbles = (
   }, [isActive, serverBubbles, createBubble, createBubbleMutation]);
 
   /**
-   * Initializes the game session with bubbles only if no bubbles exist
-   * Uses a more robust check to prevent race conditions
+   * Initializes the game session - SERVER IS FULLY AUTHORITATIVE
    */
   const initializeGame = useCallback(async () => {
     if (isInitialized || !isActive) return;
 
-    // More robust check: wait for server bubbles to be defined first
-    if (serverBubbles === undefined) {
-      // Still loading, don't initialize yet
-      return;
-    }
+    // Wait for server bubbles to be loaded
+    if (serverBubbles === undefined) return;
 
-    // If bubbles already exist, just mark as initialized
+    // If bubbles already exist on server, just sync and mark as initialized
     if (serverBubbles.length > 0) {
       setIsInitialized(true);
+      // Force sync with server state immediately
+      syncWithServer();
       return;
     }
 
-    // Double-check we're not already initialized to prevent race conditions
-    if (isInitialized) return;
-
-    // Prevent rapid initialization attempts - debounce with exponential backoff
+    // Only attempt initialization once with strict debouncing
     const now = Date.now();
     const timeSinceLastAttempt = now - initializationAttemptRef.current;
-    const minInterval = 1000; // 1 second minimum between attempts
+    const minInterval = 5000; // 5 second minimum between attempts to prevent race conditions
     
     if (timeSinceLastAttempt < minInterval) {
-      return; // Too soon since last attempt
+      return;
     }
 
     initializationAttemptRef.current = now;
 
-    // Only initialize if no bubbles exist and we haven't already tried
     try {
+      // Generate initial bubbles with perfect balance
       const initialBubbles = Array.from({ length: BUBBLE_CONFIG.initialBubbles }, (_, index) => {
-        // Ensure exactly equal distribution for initial bubbles
         const forceType = index < BUBBLE_CONFIG.initialBubbles / 2 ? 'light' : 'dark';
         const bubble = createBubble(forceType);
         return {
@@ -411,15 +348,16 @@ export const useBubbles = (
         initialBubbles,
       });
       
-      // Only mark as initialized if we actually created bubbles
-      if (result > 0) {
-        setIsInitialized(true);
-      }
+      // Mark as initialized regardless of result to prevent multiple attempts
+      setIsInitialized(true);
+      console.log(`Initialization result: ${result} bubbles created`);
+      
     } catch (error) {
       console.error('Failed to initialize game session:', error);
-      // Don't mark as initialized on error, allow retry
+      // Still mark as initialized to prevent repeated failed attempts
+      setIsInitialized(true);
     }
-  }, [isInitialized, isActive, gameSessionId, serverBubbles, createBubble, initializeGameMutation]);
+  }, [isInitialized, isActive, gameSessionId, serverBubbles, createBubble, initializeGameMutation, syncWithServer]);
 
   // Sync with server when server state changes
   useEffect(() => {

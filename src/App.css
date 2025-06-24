@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Smooth floating animation for bubbles */
+@keyframes floatUp {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
 /* Custom animations */
 @keyframes ripple {
   to {
