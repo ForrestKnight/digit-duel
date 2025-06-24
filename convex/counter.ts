@@ -26,47 +26,31 @@ class CounterSecurityError extends Error {
 }
 
 /**
- * Logs an operation to the audit trail.
+ * Lightweight logging function that only logs to console instead of database.
+ * Removed database audit logging to prevent document creation on every click.
  */
-async function logOperation(
-  ctx: any,
+function logOperationToConsole(
   operation: string,
   previousValue: number,
   newValue: number,
   fingerprint: string,
-  clientTimestamp: number,
   success: boolean,
-  errorMessage?: string,
-  metadata: Record<string, unknown> = {}
+  errorMessage?: string
 ) {
-  await ctx.db.insert("auditLog", {
-    operation,
-    previousValue,
-    newValue,
-    fingerprint,
-    timestamp: Date.now(),
-    success,
-    errorMessage,
-    clientTimestamp,
-    metadata,
-  });
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[Counter] ${operation}: ${previousValue} -> ${newValue} (${fingerprint}) ${success ? '✓' : '✗' + (errorMessage ? ': ' + errorMessage : '')}`);
+  }
 }
 
 /**
- * Simple inline security validation for counter operations.
- *
- * This implements basic rate limiting without calling external mutations
- * to avoid circular dependency issues.
+ * Simple validation for counter operations without database writes.
+ * Only performs basic checks without creating audit records.
  */
-async function validateSecureOperation(
-  ctx: any,
+async function validateSimpleOperation(
   inputFingerprint: string,
-  clientTimestamp: number,
-  operation: string,
-  metadata: Record<string, unknown> = {}
+  clientTimestamp: number
 ) {
   const now = Date.now();
-  const violations: any[] = [];
 
   // Use fallback fingerprint if missing or invalid
   let fingerprint = inputFingerprint;
@@ -74,107 +58,13 @@ async function validateSecureOperation(
     fingerprint = 'anonymous-' + Math.random().toString(36).substring(2, 15);
   }
 
-  // Timestamp validation (5-second drift allowance)
+  // Basic timestamp validation (10-second drift allowance for simplicity)
   const timeDrift = Math.abs(now - clientTimestamp);
-  if (timeDrift > 5000) {
-    violations.push({
-      type: 'INVALID_TIMESTAMP',
-      severity: 'medium',
-      timestamp: now,
-      context: { clientTimestamp, serverTimestamp: now, drift: timeDrift },
-    });
+  if (timeDrift > 10000) {
+    throw new Error('Invalid timestamp: client clock appears to be out of sync');
   }
 
-  // Simple rate limiting check
-  const rateLimitState = await ctx.db
-    .query("rateLimitStates")
-    .withIndex("by_fingerprint", (q: any) => q.eq("fingerprint", fingerprint))
-    .first();
-
-  if (rateLimitState) {
-    // const timeSinceLastOp = now - rateLimitState.lastOperation;
-
-    // Rate limiting disabled for testing
-    // if (timeSinceLastOp < 25) {
-    //   violations.push({
-    //     type: 'RATE_LIMIT_EXCEEDED',
-    //     severity: 'high',
-    //     timestamp: now,
-    //     context: {
-    //       operation,
-    //       timeSinceLastOp,
-    //       minInterval: 25
-    //     },
-    //   });
-    // }
-
-    // Check if client is blocked
-    if (rateLimitState.isBlocked && rateLimitState.blockExpiresAt && now < rateLimitState.blockExpiresAt) {
-      violations.push({
-        type: 'CLIENT_BLOCKED',
-        severity: 'critical',
-        timestamp: now,
-        context: {
-          operation,
-          blockExpiresAt: rateLimitState.blockExpiresAt,
-          remainingBlockTime: rateLimitState.blockExpiresAt - now,
-        },
-      });
-    }
-  }
-
-  // Update rate limit state
-  const hasViolation = violations.length > 0;
-  const newState = {
-    fingerprint,
-    lastOperation: now,
-    operationCount: 1,
-    windowStart: now,
-    violationCount: hasViolation ? (rateLimitState?.violationCount || 0) + 1 : (rateLimitState?.violationCount || 0),
-    backoffMs: hasViolation ? Math.min((rateLimitState?.backoffMs || 50) * 1.5, 5000) : 0,
-    isBlocked: (rateLimitState?.violationCount || 0) >= 3,
-    blockExpiresAt: (rateLimitState?.violationCount || 0) >= 3 ? now + 60000 : rateLimitState?.blockExpiresAt,
-  };
-
-  if (rateLimitState) {
-    await ctx.db.patch(rateLimitState._id, newState);
-  } else {
-    await ctx.db.insert("rateLimitStates", newState);
-  }
-
-  // Log security events if violations exist
-  if (hasViolation) {
-    await ctx.db.insert("securityEvents", {
-      fingerprint,
-      operation,
-      violations,
-      timestamp: now,
-      severity: Math.max(...violations.map(v =>
-        v.severity === 'critical' ? 4 :
-        v.severity === 'high' ? 3 :
-        v.severity === 'medium' ? 2 : 1
-      )),
-      metadata,
-    });
-  }
-
-  const shouldBlock = violations.some(v => v.severity === 'high' || v.severity === 'critical');
-
-  if (shouldBlock) {
-    const violationTypes = violations.map(v => v.type).join(', ');
-    throw new CounterSecurityError(
-      `Operation blocked due to security violations: ${violationTypes}`,
-      'SECURITY_VALIDATION_FAILED',
-      violations,
-      true
-    );
-  }
-
-  return {
-    isValid: !hasViolation,
-    violations,
-    shouldBlock: false,
-  };
+  return { fingerprint };
 }
 
 /**
@@ -204,8 +94,8 @@ export const secureIncrement = mutation({
     let errorMessage: string | undefined;
 
     try {
-      // Validate security first - this will throw if invalid
-      await validateSecureOperation(ctx, fingerprint, clientTimestamp, 'increment', metadata);
+      // Simple validation without database writes
+      const validation = await validateSimpleOperation(fingerprint, clientTimestamp);
 
       // Get the current counter or create it if it doesn't exist
       const existingCounter = await ctx.db
@@ -238,29 +128,16 @@ export const secureIncrement = mutation({
       return newValue;
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-      // Re-throw security errors to be handled by client
-      if (error instanceof CounterSecurityError) {
-        throw error;
-      }
-
-      // For other errors, throw a generic error
       throw new Error('Operation failed: ' + errorMessage);
     } finally {
-      // Always log the operation attempt for audit purposes
-      await logOperation(
-        ctx,
+      // Log to console only, no database writes
+      logOperationToConsole(
         'increment',
         previousValue,
         newValue,
         fingerprint,
-        clientTimestamp,
         success,
-        errorMessage,
-        {
-          ...metadata,
-          executionTimeMs: Date.now() - startTime,
-        }
+        errorMessage
       );
     }
   },
@@ -290,8 +167,8 @@ export const secureDecrement = mutation({
     let errorMessage: string | undefined;
 
     try {
-      // Validate security first
-      await validateSecureOperation(ctx, fingerprint, clientTimestamp, 'decrement', metadata);
+      // Simple validation without database writes
+      const validation = await validateSimpleOperation(fingerprint, clientTimestamp);
 
       // Get the current counter or create it if it doesn't exist
       const existingCounter = await ctx.db
@@ -324,26 +201,16 @@ export const secureDecrement = mutation({
       return newValue;
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-      if (error instanceof CounterSecurityError) {
-        throw error;
-      }
-
       throw new Error('Operation failed: ' + errorMessage);
     } finally {
-      await logOperation(
-        ctx,
+      // Log to console only, no database writes
+      logOperationToConsole(
         'decrement',
         previousValue,
         newValue,
         fingerprint,
-        clientTimestamp,
         success,
-        errorMessage,
-        {
-          ...metadata,
-          executionTimeMs: Date.now() - startTime,
-        }
+        errorMessage
       );
     }
   },
@@ -428,8 +295,8 @@ export const secureReset = mutation({
     let errorMessage: string | undefined;
 
     try {
-      // Validate security first
-      await validateSecureOperation(ctx, fingerprint, clientTimestamp, 'reset', metadata);
+      // Simple validation without database writes
+      const validation = await validateSimpleOperation(fingerprint, clientTimestamp);
 
       const existingCounter = await ctx.db
         .query("counters")
@@ -461,26 +328,16 @@ export const secureReset = mutation({
       return newValue;
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-      if (error instanceof CounterSecurityError) {
-        throw error;
-      }
-
       throw new Error('Operation failed: ' + errorMessage);
     } finally {
-      await logOperation(
-        ctx,
+      // Log to console only, no database writes
+      logOperationToConsole(
         'reset',
         previousValue,
         newValue,
         fingerprint,
-        clientTimestamp,
         success,
-        errorMessage,
-        {
-          ...metadata,
-          executionTimeMs: Date.now() - startTime,
-        }
+        errorMessage
       );
     }
   },

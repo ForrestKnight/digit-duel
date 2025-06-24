@@ -473,60 +473,26 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
   }, [finalConfig, counterDetails, isInBackoff, backoffUntil, handleSecurityViolation, createSecurityError]);
 
   /**
-   * Securely increments the counter by 1 or more.
+   * Securely increments the counter by 1.
    */
-  const increment = useCallback(async (points: number = 1): Promise<void> => {
-    if (points === 1) {
-      await executeSecureOperation(
-        'increment',
-        secureIncrementMutation,
-        (current) => current + 1
-      );
-    } else {
-      // For multi-point increments, apply optimistic update immediately
-      if (counterDetails) {
-        const currentDisplayValue = optimisticValue ?? counterDetails.value;
-        setOptimisticValue(currentDisplayValue + points);
-      }
-      
-      // Fire all individual increments to server (without optimistic updates)
-      for (let i = 0; i < points; i++) {
-        executeSecureOperation(
-          'increment',
-          secureIncrementMutation,
-          undefined // No optimistic update for individual calls
-        );
-      }
-    }
-  }, [executeSecureOperation, secureIncrementMutation, counterDetails, optimisticValue]);
+  const increment = useCallback(async (): Promise<void> => {
+    await executeSecureOperation(
+      'increment',
+      secureIncrementMutation,
+      (current) => current + 1
+    );
+  }, [executeSecureOperation, secureIncrementMutation]);
 
   /**
-   * Securely decrements the counter by 1 or more.
+   * Securely decrements the counter by 1.
    */
-  const decrement = useCallback(async (points: number = 1): Promise<void> => {
-    if (points === 1) {
-      await executeSecureOperation(
-        'decrement',
-        secureDecrementMutation,
-        (current) => current - 1
-      );
-    } else {
-      // For multi-point decrements, apply optimistic update immediately
-      if (counterDetails) {
-        const currentDisplayValue = optimisticValue ?? counterDetails.value;
-        setOptimisticValue(currentDisplayValue - points);
-      }
-      
-      // Fire all individual decrements to server (without optimistic updates)
-      for (let i = 0; i < points; i++) {
-        executeSecureOperation(
-          'decrement',
-          secureDecrementMutation,
-          undefined // No optimistic update for individual calls
-        );
-      }
-    }
-  }, [executeSecureOperation, secureDecrementMutation, counterDetails, optimisticValue]);
+  const decrement = useCallback(async (): Promise<void> => {
+    await executeSecureOperation(
+      'decrement',
+      secureDecrementMutation,
+      (current) => current - 1
+    );
+  }, [executeSecureOperation, secureDecrementMutation]);
 
   /**
    * Securely resets the counter to 0.

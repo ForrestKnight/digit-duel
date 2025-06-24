@@ -37,7 +37,6 @@ const BUBBLE_CONFIG = {
   spawnInterval: 600, // ms between spawns
   baseSpeed: 0.04, // percentage per frame
   sizeVariation: [1, 2, 3, 4], // size levels
-  pointValues: { 1: 4, 2: 3, 3: 2, 4: 1 }, // size to points mapping
   syncInterval: 100, // ms between position syncs
 };
 

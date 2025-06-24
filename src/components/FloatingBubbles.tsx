@@ -2,8 +2,8 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { useBubbles } from '../hooks/useBubbles';
 
 interface FloatingBubblesProps {
-  onLightClick: (points: number) => Promise<void>;
-  onDarkClick: (points: number) => Promise<void>;
+  onLightClick: () => Promise<void>;
+  onDarkClick: () => Promise<void>;
   isActive: boolean;
   lightPercentage: number;
   darkPercentage: number;
@@ -106,7 +106,7 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
     }, 100); // Click cooldown
 
     // Calculate points based on bubble size (smaller = more points)
-    const points = bubbleConfig.pointValues[bubble.size as keyof typeof bubbleConfig.pointValues];
+const points = 1; // Fixed point value for each bubble
 
     // Start pop animation
     setPoppingBubbles(prev => new Set(prev).add(bubble.bubbleId));
@@ -116,10 +116,10 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
       // Pop the bubble in realtime (this will sync across all clients)
       const popPromise = realtimePopBubble(bubble.bubbleId);
       
-      // Execute the appropriate action with points immediately
+      // Execute the appropriate action immediately
       const actionPromise = bubble.type === 'light' 
-        ? onLightClick(points)
-        : onDarkClick(points);
+        ? onLightClick()
+        : onDarkClick();
       
       // Wait for both to complete
       await Promise.all([popPromise, actionPromise]);
@@ -191,7 +191,6 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
                   ? 'text-orange-900 opacity-90'
                   : 'text-white opacity-75'
               }`}>
-                +{bubbleConfig.pointValues[bubble.size as keyof typeof bubbleConfig.pointValues]}
               </span>
             </div>
           </div>
