@@ -230,7 +230,7 @@ export const VictoryScreen: React.FC<VictoryScreenProps> = ({
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <div className="font-semibold">Victory Threshold</div>
-                <div className="opacity-75">±100 points</div>
+                <div className="opacity-75">±200 points</div>
               </div>
               <div>
                 <div className="font-semibold">Theme Dominance</div>

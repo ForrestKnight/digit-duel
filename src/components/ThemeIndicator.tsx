@@ -57,7 +57,7 @@ export const ThemeIndicator: React.FC<ThemeIndicatorProps> = ({
       <div className="relative">
         <div className={`h-4 ${config.bgColor} rounded-full border-2 ${config.borderColor} overflow-hidden`}>
           <div
-            className={`h-full bg-gradient-to-r ${config.fillColor} transition-all duration-700 ease-out`}
+            className={`h-full bg-gradient-to-r ${config.fillColor} transition-all duration-100 ease-out`}
             style={{ width: `${percentage}%` }}
           >
             {/* Animated shine effect */}

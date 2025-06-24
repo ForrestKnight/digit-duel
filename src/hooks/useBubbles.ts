@@ -32,10 +32,10 @@ interface LocalBubble extends Bubble {
  */
 const BUBBLE_CONFIG = {
   maxBubbles: 40,
-  minBubbles: 30,
+  minBubbles: 35,
   initialBubbles: 40,
-  spawnInterval: 600, // ms between spawns
-  baseSpeed: 0.04, // percentage per frame
+  spawnInterval: 150, // ms between spawns (much faster than 600ms)
+  baseSpeed: 0.06, // percentage per frame (increased speed)
   sizeVariation: [1, 2, 3, 4], // size levels
   syncInterval: 100, // ms between position syncs
 };

@@ -32,7 +32,7 @@ export const CounterDisplay: React.FC<CounterDisplayProps> = ({
       // Remove animation class after animation completes
       const timeout = setTimeout(() => {
         setAnimationClass('');
-      }, 2000);
+      }, 300);
 
       return () => clearTimeout(timeout);
     } else {
@@ -59,7 +59,7 @@ export const CounterDisplay: React.FC<CounterDisplayProps> = ({
             text-8xl md:text-9xl font-bold text-gray-800 select-none
             ${animationClass}
             ${isUpdating ? 'opacity-75' : 'opacity-100'}
-            transition-opacity duration-200
+            transition-opacity
           `}
           data-testid="counter-value"
         >

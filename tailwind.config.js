@@ -8,7 +8,7 @@ export default {
     extend: {
       animation: {
         'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'bounce-gentle': 'bounce 2s infinite',
+        'bounce-gentle': 'bounce 0.3s ease-out',
         'shake': 'shake 0.5s ease-in-out',
         'slide-up': 'slide-up 0.5s ease-out',
         'fade-in': 'fade-in 0.3s ease-in',

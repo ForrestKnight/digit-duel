@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useSecureCounter } from '../hooks/useCounter';
-import { VictoryScreen } from './VictoryScreen';
-import { SoundManager } from './SoundManager';
 import { FloatingBubbles } from './FloatingBubbles';
+import { SoundManager } from './SoundManager';
+import { VictoryScreen } from './VictoryScreen';
 
 /**
  * Victory thresholds for theme battle
  */
 const VICTORY_THRESHOLDS = {
-  LIGHT_WINS: 100,  // Light theme wins when counter >= 100
-  DARK_WINS: -100,  // Dark theme wins when counter <= -100
+  LIGHT_WINS: 200,  // Light theme wins when counter >= 200
+  DARK_WINS: -200,  // Dark theme wins when counter <= -200
   TOTAL_RANGE: 200, // Total range for percentage calculations
 };
 
@@ -95,6 +95,28 @@ const fightForDark = useCallback(async () => {
     }
   }, [decrement]);
 
+  // Test function for 10 light clicks
+  const testLight10 = useCallback(async () => {
+    try {
+      for (let i = 0; i < 10; i++) {
+        await increment();
+      }
+    } catch (error) {
+      console.error('Failed to perform test light clicks:', error);
+    }
+  }, [increment]);
+
+  // Test function for 10 dark clicks
+  const testDark10 = useCallback(async () => {
+    try {
+      for (let i = 0; i < 10; i++) {
+        await decrement();
+      }
+    } catch (error) {
+      console.error('Failed to perform test dark clicks:', error);
+    }
+  }, [decrement]);
+
   // Loading state
   if (!counter && !error) {
     return (
@@ -139,7 +161,7 @@ const fightForDark = useCallback(async () => {
       <div className="absolute inset-0 flex">
         {/* Light Theme Side */}
         <div
-          className="relative transition-all duration-700 ease-out bg-gradient-to-br from-yellow-50 via-white to-blue-50"
+          className="relative transition-all ease-out bg-gradient-to-br from-yellow-50 via-white to-blue-50"
           style={{ width: `${lightPercentage}%` }}
         >
           {/* Light Theme Background Effects */}
@@ -175,7 +197,7 @@ const fightForDark = useCallback(async () => {
 
         {/* Dark Theme Side */}
         <div
-          className="relative transition-all duration-700 ease-out bg-gradient-to-bl from-gray-900 via-purple-900 to-black"
+          className="relative transition-all ease-out bg-gradient-to-bl from-gray-900 via-purple-900 to-black"
           style={{ width: `${darkPercentage}%` }}
         >
           {/* Dark Theme Background Effects */}
@@ -221,7 +243,7 @@ const fightForDark = useCallback(async () => {
 
       {/* Dividing Line - OPTIMISTIC */}
       <div
-        className="absolute top-0 bottom-0 w-2 bg-gradient-to-b from-yellow-400 via-gray-500 to-purple-400 shadow-lg transition-all duration-300 ease-out z-10"
+        className="absolute top-0 bottom-0 w-2 bg-gradient-to-b from-yellow-400 via-gray-500 to-purple-400 shadow-lg transition-all ease-out z-10"
         style={{ 
           left: `${lightPercentage}%`,
           transform: 'translateX(-50%)',
@@ -249,6 +271,28 @@ const fightForDark = useCallback(async () => {
           onClose={() => setShowVictory(false)}
         />
       )}
+
+      {/* Test Controls Panel */}
+      <div className="absolute top-4 right-4 z-20 bg-black/50 backdrop-blur-sm rounded-lg p-4 text-white">
+        <div className="text-sm font-semibold mb-3 text-center">🧪 Test Controls</div>
+        <div className="space-y-2">
+          <button
+            onClick={testLight10}
+            className="w-full px-3 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded transition-colors text-sm"
+            title="Add 10 points for Light theme (testing only)"
+          >
+            ☀️ +10 Light
+          </button>
+          <button
+            onClick={testDark10}
+            className="w-full px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded transition-colors text-sm"
+            title="Add 10 points for Dark theme (testing only)"
+          >
+            🌙 +10 Dark
+          </button>
+        </div>
+        <div className="text-xs opacity-75 mt-2 text-center">For testing only</div>
+      </div>
 
       {/* Accessibility Announcements */}
       <div className="sr-only" aria-live="polite" aria-atomic="true">

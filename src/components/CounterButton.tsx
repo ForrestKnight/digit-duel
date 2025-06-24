@@ -116,7 +116,7 @@ export const CounterButton: React.FC<CounterButtonProps> = ({
       className={`
         relative flex items-center justify-center gap-2 px-6 py-4
         text-lg font-semibold rounded-xl border-2
-        transition-all duration-200 ease-in-out
+        transition-all ease-in-out
         transform-gpu
         min-w-[120px] h-[60px]
         focus:outline-none
@@ -228,7 +228,7 @@ export const QuickIncrementButton: React.FC<{
       shadow-lg hover:shadow-xl
       hover:bg-green-600 active:bg-green-700
       focus:outline-none
-      transition-all duration-200
+      transition-all
       flex items-center justify-center
       ${loading ? 'cursor-wait opacity-75' : 'cursor-pointer hover:scale-110 active:scale-95'}
       ${className}

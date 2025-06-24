@@ -100,7 +100,7 @@ export const BattleControls: React.FC<BattleControlsProps> = ({
             disabled={false}
             className={`
               group relative px-8 py-4 rounded-xl font-bold text-lg
-              transition-all duration-300 ease-out
+              transition-all duration-100 ease-out
               transform-gpu hover:scale-105 active:scale-95
               focus:outline-none focus:ring-4 focus:ring-yellow-400/50
               ${lastAction === 'light' ? 'animate-success-flash' : ''}
@@ -113,7 +113,7 @@ export const BattleControls: React.FC<BattleControlsProps> = ({
             aria-label="Fight for light theme - adds 1 to counter"
           >
             {/* Background glow effect */}
-            <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-yellow-400 to-orange-500 opacity-0 group-hover:opacity-20 transition-opacity duration-300 animate-glow" />
+            <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-yellow-400 to-orange-500 opacity-0 group-hover:opacity-20 transition-opacity duration-100 animate-glow" />
             
             {/* Button content */}
             <div className="relative flex items-center gap-3">
@@ -139,7 +139,7 @@ export const BattleControls: React.FC<BattleControlsProps> = ({
             disabled={false}
             className={`
               relative px-6 py-4 rounded-xl font-semibold
-              transition-all duration-300 ease-out
+              transition-all duration-100 ease-out
               transform-gpu hover:scale-105 active:scale-95
               focus:outline-none focus:ring-4 focus:ring-gray-400/50
               ${lastAction === 'reset' ? 'animate-pulse' : ''}
@@ -171,7 +171,7 @@ export const BattleControls: React.FC<BattleControlsProps> = ({
             disabled={false}
             className={`
               group relative px-8 py-4 rounded-xl font-bold text-lg
-              transition-all duration-300 ease-out
+              transition-all duration-100 ease-out
               transform-gpu hover:scale-105 active:scale-95
               focus:outline-none focus:ring-4 focus:ring-purple-400/50
               ${lastAction === 'dark' ? 'animate-success-flash' : ''}
@@ -184,7 +184,7 @@ export const BattleControls: React.FC<BattleControlsProps> = ({
             aria-label="Fight for dark theme - subtracts 1 from counter"
           >
             {/* Background glow effect */}
-            <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-700 opacity-0 group-hover:opacity-20 transition-opacity duration-300 animate-glow" />
+            <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-700 opacity-0 group-hover:opacity-20 transition-opacity duration-100 animate-glow" />
             
             {/* Button content */}
             <div className="relative flex items-center gap-3">
@@ -210,12 +210,12 @@ export const BattleControls: React.FC<BattleControlsProps> = ({
           <div className="relative h-3 bg-gray-700 rounded-full overflow-hidden">
             {/* Light progress */}
             <div
-              className="absolute left-0 top-0 h-full bg-gradient-to-r from-yellow-400 to-orange-500 transition-all duration-700 ease-out"
+              className="absolute left-0 top-0 h-full bg-gradient-to-r from-yellow-400 to-orange-500 transition-all duration-100 ease-out"
               style={{ width: `${lightPercentage}%` }}
             />
             {/* Dark progress */}
             <div
-              className="absolute right-0 top-0 h-full bg-gradient-to-l from-purple-600 to-indigo-700 transition-all duration-700 ease-out"
+              className="absolute right-0 top-0 h-full bg-gradient-to-l from-purple-600 to-indigo-700 transition-all duration-100 ease-out"
               style={{ width: `${darkPercentage}%` }}
             />
             {/* Center marker */}
