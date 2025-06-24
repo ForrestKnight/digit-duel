@@ -105,8 +105,8 @@ export const useBubbles = (
       bubbleId,
       id: bubbleId, // For React keys
       type,
-      x: Math.random() * 90 + 5, // 5% to 95% - random spawn position
-      y: Math.random() * 80 + 10, // 10% to 90% - random spawn position
+      x: Math.random() * 90 + 5, // 5% to 95% - safe spawn range
+      y: Math.random() * 80 + 10, // 10% to 90% - safe spawn range
       size,
       vx: 0, // No horizontal movement - stationary
       vy: 0, // No vertical movement - stationary

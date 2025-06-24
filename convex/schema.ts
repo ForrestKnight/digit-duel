@@ -23,13 +23,10 @@ export default defineSchema({
     value: v.number(),
     /** Unique identifier for the counter instance */
     name: v.string(),
-    /** Timestamp of the last update for audit purposes */
-    lastUpdated: v.number(),
-    /** Version number for optimistic concurrency control */
+    /** Version number for optimistic concurrency control (updated less frequently) */
     version: v.number(),
   })
-    .index("by_name", ["name"])
-    .index("by_last_updated", ["lastUpdated"]),
+    .index("by_name", ["name"]),
 
   /**
    * Rate limiting state for each client fingerprint.

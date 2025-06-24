@@ -88,7 +88,6 @@ export const secureIncrement = mutation({
         await ctx.db.insert("counters", {
           name: GLOBAL_COUNTER_NAME,
           value: newValue,
-          lastUpdated: Date.now(),
           version: 1,
         });
       } else {
@@ -97,8 +96,8 @@ export const secureIncrement = mutation({
         newValue = existingCounter.value + 1;
         await ctx.db.patch(existingCounter._id, {
           value: newValue,
-          lastUpdated: Date.now(),
-          version: existingCounter.version + 1,
+          // Only increment version every 10 operations to reduce bandwidth
+          version: existingCounter.version + (existingCounter.value % 10 === 0 ? 1 : 0),
         });
       }
 
@@ -160,7 +159,6 @@ export const secureDecrement = mutation({
         await ctx.db.insert("counters", {
           name: GLOBAL_COUNTER_NAME,
           value: newValue,
-          lastUpdated: Date.now(),
           version: 1,
         });
       } else {
@@ -169,8 +167,8 @@ export const secureDecrement = mutation({
         newValue = existingCounter.value - 1;
         await ctx.db.patch(existingCounter._id, {
           value: newValue,
-          lastUpdated: Date.now(),
-          version: existingCounter.version + 1,
+          // Only increment version every 10 operations to reduce bandwidth
+          version: existingCounter.version + (existingCounter.value % 10 === 0 ? 1 : 0),
         });
       }
 
@@ -234,7 +232,7 @@ export const getCounterDetails = query({
       return {
         value: 0,
         version: 0,
-        lastUpdated: Date.now(),
+        lastUpdated: Date.now(), // Use current time for non-existent counter
         name: GLOBAL_COUNTER_NAME,
       };
     }
@@ -242,7 +240,7 @@ export const getCounterDetails = query({
     return {
       value: counter.value,
       version: counter.version,
-      lastUpdated: counter.lastUpdated,
+      lastUpdated: counter._creationTime, // Use _creationTime instead of lastUpdated field
       name: counter.name,
     };
   },
@@ -286,7 +284,6 @@ export const secureReset = mutation({
         await ctx.db.insert("counters", {
           name: GLOBAL_COUNTER_NAME,
           value: 0,
-          lastUpdated: Date.now(),
           version: 1,
         });
       } else {
@@ -295,7 +292,7 @@ export const secureReset = mutation({
         newValue = 0;
         await ctx.db.patch(existingCounter._id, {
           value: 0,
-          lastUpdated: Date.now(),
+          // Reset operation always increments version for tracking
           version: existingCounter.version + 1,
         });
       }
@@ -334,7 +331,6 @@ export const increment = mutation({
       await ctx.db.insert("counters", {
         name: GLOBAL_COUNTER_NAME,
         value: 1,
-        lastUpdated: Date.now(),
         version: 1,
       });
       return 1;
@@ -343,7 +339,6 @@ export const increment = mutation({
     const newValue = existingCounter.value + 1;
     await ctx.db.patch(existingCounter._id, {
       value: newValue,
-      lastUpdated: Date.now(),
       version: existingCounter.version + 1,
     });
 
@@ -363,7 +358,6 @@ export const decrement = mutation({
       await ctx.db.insert("counters", {
         name: GLOBAL_COUNTER_NAME,
         value: -1,
-        lastUpdated: Date.now(),
         version: 1,
       });
       return -1;
@@ -372,7 +366,6 @@ export const decrement = mutation({
     const newValue = existingCounter.value - 1;
     await ctx.db.patch(existingCounter._id, {
       value: newValue,
-      lastUpdated: Date.now(),
       version: existingCounter.version + 1,
     });
 
@@ -392,7 +385,6 @@ export const reset = mutation({
       await ctx.db.insert("counters", {
         name: GLOBAL_COUNTER_NAME,
         value: 0,
-        lastUpdated: Date.now(),
         version: 1,
       });
       return 0;
@@ -400,7 +392,6 @@ export const reset = mutation({
 
     await ctx.db.patch(existingCounter._id, {
       value: 0,
-      lastUpdated: Date.now(),
       version: existingCounter.version + 1,
     });
 

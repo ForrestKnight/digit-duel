@@ -208,7 +208,8 @@ function checkRateLimit(state: any, now: number, operation: string) {
 }
 
 /**
- * Updates the rate limiting state for a client.
+ * Updates the rate limiting state for a client (optimized for bandwidth).
+ * Only updates database every 5 operations or on violations to reduce writes.
  */
 async function updateRateLimitState(ctx: any, fingerprint: string, now: number, hasViolation: boolean) {
   const existing = await ctx.db
@@ -218,11 +219,19 @@ async function updateRateLimitState(ctx: any, fingerprint: string, now: number, 
 
   const windowElapsed = existing ? now - existing.windowStart : 0;
   const shouldResetWindow = windowElapsed >= SECURITY_CONFIG.RATE_LIMIT.WINDOW_MS;
+  const operationCount = shouldResetWindow ? 1 : (existing?.operationCount || 0) + 1;
+  
+  // Only update database on violations or every 5 operations to reduce bandwidth
+  const shouldUpdateDb = hasViolation || (operationCount % 5 === 0) || !existing;
+  
+  if (!shouldUpdateDb) {
+    return; // Skip database write for this operation
+  }
 
   const newState = {
     fingerprint,
     lastOperation: now,
-    operationCount: shouldResetWindow ? 1 : (existing?.operationCount || 0) + 1,
+    operationCount,
     windowStart: shouldResetWindow ? now : (existing?.windowStart || now),
     violationCount: hasViolation ? (existing?.violationCount || 0) + 1 : (existing?.violationCount || 0),
     backoffMs: hasViolation 
@@ -230,7 +239,7 @@ async function updateRateLimitState(ctx: any, fingerprint: string, now: number, 
           (existing?.backoffMs || SECURITY_CONFIG.RATE_LIMIT.MIN_INTERVAL_MS) * SECURITY_CONFIG.RATE_LIMIT.BACKOFF_MULTIPLIER,
           SECURITY_CONFIG.RATE_LIMIT.MAX_BACKOFF_MS
         )
-      : Math.max((existing?.backoffMs || 0) * 0.5, 0), // Decay backoff on successful operations
+      : Math.max((existing?.backoffMs || 0) * 0.5, 0),
     isBlocked: (existing?.violationCount || 0) >= SECURITY_CONFIG.MAX_VIOLATIONS_BEFORE_BLOCK,
     blockExpiresAt: (existing?.violationCount || 0) >= SECURITY_CONFIG.MAX_VIOLATIONS_BEFORE_BLOCK 
       ? now + SECURITY_CONFIG.BLOCK_DURATION_MS
