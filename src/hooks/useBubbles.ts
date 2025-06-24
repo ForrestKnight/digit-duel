@@ -34,7 +34,7 @@ const BUBBLE_CONFIG = {
   maxBubbles: 40,
   minBubbles: 35,
   initialBubbles: 40,
-  spawnInterval: 150, // ms between spawns (much faster than 600ms)
+  spawnInterval: 100, // ms between spawns (even faster for more responsive gameplay)
   baseSpeed: 0.06, // percentage per frame (increased speed)
   sizeVariation: [1, 2, 3, 4], // size levels
   syncInterval: 100, // ms between position syncs
@@ -75,20 +75,28 @@ export const useBubbles = (
   const initializationAttemptRef = useRef<number>(0);
 
   /**
-   * Creates a new bubble with appropriate type distribution
+   * Creates a new bubble with balanced type distribution
    */
-  const createBubble = useCallback((): LocalBubble => {
+  const createBubble = useCallback((forceType?: 'light' | 'dark'): LocalBubble => {
     const now = Date.now();
     const size = BUBBLE_CONFIG.sizeVariation[Math.floor(Math.random() * BUBBLE_CONFIG.sizeVariation.length)];
     
-    // Determine type based on current battle state
+    // Determine type - ensure equal distribution unless forced
     let type: 'light' | 'dark';
-    if (lightPercentage > 70) {
-      type = Math.random() < 0.7 ? 'light' : 'dark';
-    } else if (darkPercentage > 70) {
-      type = Math.random() < 0.7 ? 'dark' : 'light';
+    if (forceType) {
+      type = forceType;
     } else {
-      type = Math.random() < 0.5 ? 'light' : 'dark';
+      // Count current bubbles to maintain balance
+      const lightCount = localBubbles.filter(b => b.type === 'light').length;
+      const darkCount = localBubbles.filter(b => b.type === 'dark').length;
+      
+      if (lightCount > darkCount) {
+        type = 'dark'; // Create dark bubble to balance
+      } else if (darkCount > lightCount) {
+        type = 'light'; // Create light bubble to balance
+      } else {
+        type = Math.random() < 0.5 ? 'light' : 'dark'; // Equal counts, random choice
+      }
     }
 
     const bubbleId = `bubble-${nextIdRef.current++}-${now}`;
@@ -173,12 +181,51 @@ export const useBubbles = (
     // Mark as recently popped to prevent reappearing during sync
     setRecentlyPopped(prev => new Set(prev).add(bubbleId));
     
+    // Get current bubble state for balance calculations before removing
+    const currentBubbles = localBubbles;
+    const lightCount = currentBubbles.filter(b => b.type === 'light').length;
+    const darkCount = currentBubbles.filter(b => b.type === 'dark').length;
+    const poppedBubble = currentBubbles.find(b => b.bubbleId === bubbleId);
+    
     // Optimistically remove from local state
     setLocalBubbles(prev => prev.filter(b => b.bubbleId !== bubbleId));
     
     // Notify server
     try {
       await popBubbleMutation({ bubbleId });
+      
+      // IMMEDIATELY spawn a new bubble to replace the popped one
+      // This ensures continuous action and prevents button clicking all bubbles
+      // Try to maintain balance by replacing with opposite type when possible
+      let preferredType: 'light' | 'dark' | undefined;
+      if (poppedBubble) {
+        // If we're unbalanced, prefer the underrepresented type
+        if (poppedBubble.type === 'light' && lightCount <= darkCount) {
+          preferredType = 'light'; // Keep light if lights are equal or fewer
+        } else if (poppedBubble.type === 'dark' && darkCount <= lightCount) {
+          preferredType = 'dark'; // Keep dark if darks are equal or fewer
+        }
+        // Otherwise let createBubble decide based on current balance
+      }
+      
+      const newBubble = createBubble(preferredType);
+      
+      // Add to local state optimistically
+      setLocalBubbles(prev => [...prev, newBubble]);
+      
+      // Send new bubble to server immediately
+      createBubbleMutation({
+        bubbleId: newBubble.bubbleId,
+        type: newBubble.type,
+        x: newBubble.x,
+        y: newBubble.y,
+        size: newBubble.size,
+        vx: newBubble.vx,
+        vy: newBubble.vy,
+        createdAt: newBubble.createdAt,
+        depth: newBubble.depth,
+        gameSessionId: newBubble.gameSessionId,
+      }).catch(console.error);
       
       // Clear from recently popped after a delay to ensure server sync is complete
       setTimeout(() => {
@@ -202,7 +249,7 @@ export const useBubbles = (
       // Re-sync with server on error
       syncWithServer();
     }
-  }, [popBubbleMutation, syncWithServer]);
+  }, [popBubbleMutation, syncWithServer, createBubble, createBubbleMutation, localBubbles]);
 
   /**
    * Updates bubble positions and syncs with server periodically
@@ -278,8 +325,12 @@ export const useBubbles = (
     if (totalServerBubbles >= BUBBLE_CONFIG.maxBubbles) return;
     
     // Only spawn if we're below minimum or randomly when below max
+    // Increase spawn probability when bubble count is low for more responsive gameplay
+    const bubbleRatio = totalServerBubbles / BUBBLE_CONFIG.maxBubbles;
+    const spawnProbability = bubbleRatio < 0.5 ? 0.1 : bubbleRatio < 0.75 ? 0.05 : 0.02;
+    
     const shouldSpawn = totalServerBubbles < BUBBLE_CONFIG.minBubbles || 
-                       (totalServerBubbles < BUBBLE_CONFIG.maxBubbles && Math.random() < 0.02); // Much lower probability
+                       (totalServerBubbles < BUBBLE_CONFIG.maxBubbles && Math.random() < spawnProbability);
     
     if (!shouldSpawn) return;
 
@@ -338,8 +389,10 @@ export const useBubbles = (
 
     // Only initialize if no bubbles exist and we haven't already tried
     try {
-      const initialBubbles = Array.from({ length: BUBBLE_CONFIG.initialBubbles }, () => {
-        const bubble = createBubble();
+      const initialBubbles = Array.from({ length: BUBBLE_CONFIG.initialBubbles }, (_, index) => {
+        // Ensure exactly equal distribution for initial bubbles
+        const forceType = index < BUBBLE_CONFIG.initialBubbles / 2 ? 'light' : 'dark';
+        const bubble = createBubble(forceType);
         return {
           bubbleId: bubble.bubbleId,
           type: bubble.type,

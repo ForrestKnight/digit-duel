@@ -146,5 +146,28 @@ export default defineSchema({
     .index("by_game_session", ["gameSessionId"])
     .index("by_created_at", ["createdAt"])
     .index("by_type", ["type"]),
+
+  /**
+   * Game statistics for persistent win tracking.
+   * Stores overall battle statistics across all sessions.
+   */
+  gameStats: defineTable({
+    /** Unique identifier for the stats record (typically "global") */
+    statsId: v.string(),
+    /** Number of times light theme has won */
+    lightWins: v.number(),
+    /** Number of times dark theme has won */
+    darkWins: v.number(),
+    /** Total number of battles completed */
+    totalBattles: v.number(),
+    /** Timestamp of last battle */
+    lastBattleAt: v.number(),
+    /** Timestamp when stats were created */
+    createdAt: v.number(),
+    /** Timestamp of last update */
+    updatedAt: v.number(),
+  })
+    .index("by_stats_id", ["statsId"])
+    .index("by_last_battle", ["lastBattleAt"]),
 });
 

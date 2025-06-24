@@ -55,16 +55,16 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
     const style = sizeStyles[bubble.size as keyof typeof sizeStyles];
     const themeColors: Record<'light' | 'dark', { bg: string; border: string; glow: string; shadow: string }> = {
       light: {
-        bg: 'radial-gradient(circle, rgba(251, 191, 36, 0.95) 0%, rgba(245, 158, 11, 0.85) 70%, rgba(217, 119, 6, 0.75) 100%)',
-        border: '#d97706',
-        glow: '0 0 15px rgba(217, 119, 6, 0.8)',
-        shadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+        bg: 'radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, rgba(248, 249, 250, 0.8) 70%, rgba(233, 236, 239, 0.7) 100%)',
+        border: '#6c757d',
+        glow: '0 0 12px rgba(108, 117, 125, 0.4)',
+        shadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
       },
       dark: {
-        bg: 'radial-gradient(circle, rgba(147, 51, 234, 0.8) 0%, rgba(126, 34, 206, 0.6) 70%, rgba(107, 33, 168, 0.4) 100%)',
-        border: '#9333ea',
-        glow: '0 0 15px rgba(147, 51, 234, 0.6)',
-        shadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+        bg: 'radial-gradient(circle, rgba(40, 42, 54, 0.9) 0%, rgba(68, 71, 90, 0.8) 70%, rgba(98, 114, 164, 0.7) 100%)',
+        border: '#6272a4',
+        glow: '0 0 12px rgba(98, 114, 164, 0.6)',
+        shadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
       },
     };
 
@@ -157,10 +157,10 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
           style={getBubbleStyle(bubble)}
           onClick={(e) => handleBubbleClick(bubble, e)}
           onMouseDown={(e) => e.preventDefault()}
-          title={`Click to fight for ${bubble.type} theme!`}
+          title={`Click to support ${bubble.type} mode`}
           role="button"
           tabIndex={0}
-          aria-label={`${bubble.type} theme bubble - click to support ${bubble.type} side`}
+          aria-label={`${bubble.type} mode bubble - click to add a point`}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
@@ -172,24 +172,25 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
           <div className="absolute inset-0 flex items-center justify-center text-white font-bold pointer-events-none">
             <div className="flex flex-col items-center">
               <span className={`opacity-90 drop-shadow-lg ${
-                bubble.size === 1 ? 'text-2xl' :
-                bubble.size === 2 ? 'text-3xl' :
-                bubble.size === 3 ? 'text-4xl' :
-                'text-5xl'
+                bubble.size === 1 ? 'text-xl' :
+                bubble.size === 2 ? 'text-2xl' :
+                bubble.size === 3 ? 'text-3xl' :
+                'text-4xl'
               }`}>
-                {bubble.type === 'light' ? '☀️' : '🌙'}
+                {bubble.type === 'light' ? '🌅' : '🌌'}
               </span>
               {/* Point value indicator */}
-              <span className={`font-bold mt-1 drop-shadow-md ${
-                bubble.size === 1 ? 'text-sm' :
-                bubble.size === 2 ? 'text-base' :
-                bubble.size === 3 ? 'text-lg' :
-                'text-xl'
+              <span className={`font-mono font-bold mt-1 drop-shadow-md ${
+                bubble.size === 1 ? 'text-xs' :
+                bubble.size === 2 ? 'text-sm' :
+                bubble.size === 3 ? 'text-base' :
+                'text-lg'
               } ${
                 bubble.type === 'light' 
-                  ? 'text-orange-900 opacity-90'
-                  : 'text-white opacity-75'
+                  ? 'text-gray-700 opacity-80'
+                  : 'text-[#f8f8f2] opacity-85'
               }`}>
+                +1
               </span>
             </div>
           </div>
@@ -210,19 +211,19 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
 
       {/* Instructions overlay */}
       <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 pointer-events-auto">
-        <div className="bg-black/70 backdrop-blur-sm text-white px-4 py-2 rounded-lg text-sm text-center">
-          <p className="font-semibold">Pop bubbles to fight for your theme!</p>
-          <p className="text-xs opacity-80">
-            ☀ Light bubbles vs 🌙 Dark bubbles • Realtime synchronized across all players
+        <div className="bg-black/70 backdrop-blur-sm text-white px-4 py-2 rounded font-mono text-sm text-center">
+          <p className="font-medium">click bubbles = add points</p>
+          <p className="text-xs opacity-75 mt-1">
+            🌅 light_mode vs 🌌 dark_mode • real-time sync
           </p>
         </div>
       </div>
 
       {/* Accessibility */}
       <div className="sr-only" aria-live="polite">
-        {bubbles.length} bubbles floating. 
-        {bubbles.filter(b => b.type === 'light').length} light bubbles and{' '}
-        {bubbles.filter(b => b.type === 'dark').length} dark bubbles available.
+        {bubbles.length} interactive bubbles available. 
+        {bubbles.filter(b => b.type === 'light').length} light mode and{' '}
+        {bubbles.filter(b => b.type === 'dark').length} dark mode bubbles ready to click.
       </div>
     </div>
   );

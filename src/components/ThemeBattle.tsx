@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../../convex/_generated/api';
 import { useSecureCounter } from '../hooks/useCounter';
 import { FloatingBubbles } from './FloatingBubbles';
-import { SoundManager } from './SoundManager';
 import { VictoryScreen } from './VictoryScreen';
 
 /**
@@ -33,9 +34,20 @@ export const ThemeBattle: React.FC = () => {
     refresh,
   } = useSecureCounter();
 
+  // Convex persistent game statistics
+  const gameStats = useQuery(api.gameStats.getGameStats);
+  const recordVictory = useMutation(api.gameStats.recordVictory);
+  
   const [hasWinner, setHasWinner] = useState<'light' | 'dark' | null>(null);
   const [showVictory, setShowVictory] = useState(false);
-  const [previousValue, setPreviousValue] = useState<number>(0);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [isProcessingVictory, setIsProcessingVictory] = useState(false);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const victoryProcessedRef = useRef<Set<string>>(new Set());
+  
+  // Get persistent win counts from Convex (will auto-initialize on first victory)
+  const lightWins = gameStats?.lightWins ?? 0;
+  const darkWins = gameStats?.darkWins ?? 0;
 
   // Calculate theme balance percentage (-100 to +100) - OPTIMISTIC
   const counterValue = counter?.value ?? 0;
@@ -47,35 +59,94 @@ export const ThemeBattle: React.FC = () => {
   const lightPercentage = Math.max(0, Math.min(100, 50 + balancePercentage / 2));
   const darkPercentage = 100 - lightPercentage;
 
-  // Check for victory conditions
-  useEffect(() => {
-    if (!counter) return;
-
-    const value = counter.value;
-    
-    if (value >= VICTORY_THRESHOLDS.LIGHT_WINS && hasWinner !== 'light') {
-      setHasWinner('light');
-      setShowVictory(true);
-    } else if (value <= VICTORY_THRESHOLDS.DARK_WINS && hasWinner !== 'dark') {
-      setHasWinner('dark');
-      setShowVictory(true);
-    } else if (value > VICTORY_THRESHOLDS.DARK_WINS && value < VICTORY_THRESHOLDS.LIGHT_WINS) {
-      setHasWinner(null);
-    }
-
-    setPreviousValue(value);
-  }, [counter?.value, hasWinner]);
-
-  // Handle play again
-  const handlePlayAgain = useCallback(async () => {
+  // Handle automatic next battle
+  const handleNextBattle = useCallback(async () => {
     try {
       await reset();
       setHasWinner(null);
       setShowVictory(false);
+      setCountdown(null);
+      setIsProcessingVictory(false);
+      // Clear victory cache to allow for new victories
+      victoryProcessedRef.current.clear();
     } catch (error) {
-      console.error('Failed to reset game:', error);
+      console.error('Failed to start next battle:', error);
     }
   }, [reset]);
+
+  // Start countdown to next battle
+  const startCountdown = useCallback(() => {
+    setCountdown(10);
+    
+    countdownIntervalRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev === null || prev <= 1) {
+          // Time's up - start next battle
+          clearInterval(countdownIntervalRef.current!);
+          handleNextBattle();
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [handleNextBattle]);
+
+  // Record victory in persistent storage with race condition protection
+  const handleVictory = useCallback(async (winner: 'light' | 'dark', currentValue: number) => {
+    // Prevent multiple victory processing for the same game state
+    const victoryKey = `${winner}-${Math.sign(currentValue)}`;
+    
+    // Check if we're already processing a victory or have already processed this exact victory
+    if (isProcessingVictory || victoryProcessedRef.current.has(victoryKey)) {
+      console.log('Victory already being processed or completed:', victoryKey);
+      return;
+    }
+    
+    // Mark as processing and add to processed set
+    setIsProcessingVictory(true);
+    victoryProcessedRef.current.add(victoryKey);
+    
+    try {
+      console.log('Recording victory for:', winner, 'at value:', currentValue);
+      await recordVictory({ winner });
+      setHasWinner(winner);
+      setShowVictory(true);
+      startCountdown();
+    } catch (error) {
+      console.error('Failed to record victory:', error);
+      // Still show victory screen even if recording fails
+      setHasWinner(winner);
+      setShowVictory(true);
+      startCountdown();
+    } finally {
+      // Keep processing flag for a bit to prevent rapid re-triggers
+      setTimeout(() => {
+        setIsProcessingVictory(false);
+      }, 1000);
+    }
+  }, [recordVictory, startCountdown, isProcessingVictory]);
+
+  // Check for victory conditions with debouncing
+  useEffect(() => {
+    if (!counter || isProcessingVictory || hasWinner) return;
+
+    const value = counter.value;
+    
+    if (value >= VICTORY_THRESHOLDS.LIGHT_WINS) {
+      handleVictory('light', value);
+    } else if (value <= VICTORY_THRESHOLDS.DARK_WINS) {
+      handleVictory('dark', value);
+    }
+  }, [counter?.value, hasWinner, isProcessingVictory]);
+
+  // Cleanup countdown on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Enhanced increment for light theme (with points)
 const fightForLight = useCallback(async () => {
@@ -98,9 +169,9 @@ const fightForDark = useCallback(async () => {
   // Test function for 10 light clicks
   const testLight10 = useCallback(async () => {
     try {
-      for (let i = 0; i < 10; i++) {
-        await increment();
-      }
+      // Execute all 10 increments simultaneously
+      const promises = Array.from({ length: 10 }, () => increment());
+      await Promise.all(promises);
     } catch (error) {
       console.error('Failed to perform test light clicks:', error);
     }
@@ -109,9 +180,9 @@ const fightForDark = useCallback(async () => {
   // Test function for 10 dark clicks
   const testDark10 = useCallback(async () => {
     try {
-      for (let i = 0; i < 10; i++) {
-        await decrement();
-      }
+      // Execute all 10 decrements simultaneously
+      const promises = Array.from({ length: 10 }, () => decrement());
+      await Promise.all(promises);
     } catch (error) {
       console.error('Failed to perform test dark clicks:', error);
     }
@@ -150,82 +221,92 @@ const fightForDark = useCallback(async () => {
 
   return (
     <div className="min-h-screen relative overflow-hidden">
-      {/* Sound Manager */}
-      <SoundManager 
-        counterValue={counterValue}
-        previousValue={previousValue}
-        hasWinner={hasWinner}
-      />
 
       {/* Split Screen Container */}
       <div className="absolute inset-0 flex">
         {/* Light Theme Side */}
         <div
-          className="relative transition-all ease-out bg-gradient-to-br from-yellow-50 via-white to-blue-50"
+          className="relative transition-all ease-out bg-gradient-to-br from-gray-50 via-white to-gray-100"
           style={{ width: `${lightPercentage}%` }}
         >
           {/* Light Theme Background Effects */}
           <div className="absolute inset-0">
-            {/* Animated light rays */}
-            <div className="absolute top-0 left-1/4 w-1 h-full bg-gradient-to-b from-yellow-200 to-transparent opacity-30 animate-pulse" />
-            <div className="absolute top-0 right-1/4 w-1 h-full bg-gradient-to-b from-blue-200 to-transparent opacity-30 animate-pulse" style={{ animationDelay: '1s' }} />
+            {/* Subtle grid pattern */}
+            <div className="absolute inset-0 opacity-10" style={{
+              backgroundImage: `
+                linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px)
+              `,
+              backgroundSize: '20px 20px'
+            }} />
             
-            {/* Floating light particles */}
-            <div className="absolute top-1/4 left-1/3 w-2 h-2 bg-yellow-300 rounded-full animate-bounce opacity-60" style={{ animationDelay: '0.5s' }} />
-            <div className="absolute top-1/2 right-1/4 w-1 h-1 bg-blue-300 rounded-full animate-bounce opacity-60" style={{ animationDelay: '1.5s' }} />
-            <div className="absolute bottom-1/4 left-1/2 w-1.5 h-1.5 bg-white rounded-full animate-bounce opacity-80" style={{ animationDelay: '2s' }} />
+            {/* Floating code particles */}
+            <div className="absolute top-1/4 left-1/3 text-xs text-gray-400 opacity-60 animate-pulse" style={{ animationDelay: '0.5s' }}>{'{ }'}</div>
+            <div className="absolute top-1/2 right-1/4 text-xs text-gray-400 opacity-60 animate-pulse" style={{ animationDelay: '1.5s' }}>{'</>'}</div>
+            <div className="absolute bottom-1/4 left-1/2 text-xs text-gray-400 opacity-60 animate-pulse" style={{ animationDelay: '2s' }}>{'[]'}</div>
           </div>
 
           {/* Light Theme Content */}
           <div className="relative z-10 h-full flex flex-col items-center justify-center p-8 text-center">
             <div className="mb-6">
-              <div className="text-6xl mb-4 animate-bounce">☀️</div>
-              <h2 className="text-3xl font-bold text-gray-800 mb-2">Light Reigns</h2>
-              <p className="text-gray-600">Bringing clarity and brightness</p>
+              <div className="text-6xl mb-4">🌅</div>
+              <h2 className="text-3xl font-mono font-bold text-gray-800 mb-2">Light Mode</h2>
+              <p className="text-gray-600 font-mono text-sm">for those who code in daylight</p>
             </div>
             
             {/* Theme stats */}
-            <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3 text-center">
-              <div className="text-sm font-semibold mb-1">Light Forces</div>
-              <div className="text-2xl font-bold">{lightPercentage.toFixed(1)}%</div>
-              <div className="text-xs opacity-75">
-                {balancePercentage > 0 ? 'Advancing!' : 'Defending'}
+            <div className="bg-white/40 backdrop-blur-sm rounded border border-gray-200 p-3 text-center font-mono">
+              <div className="text-xs text-gray-500 mb-1">territory</div>
+              <div className="text-2xl font-bold text-gray-800">{lightPercentage.toFixed(1)}%</div>
+              <div className="text-xs text-gray-500">
+                {balancePercentage > 0 ? 'expanding' : 'holding'}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Dark Theme Side */}
+        {/* Dark Theme Side - Andromeda */}
         <div
-          className="relative transition-all ease-out bg-gradient-to-bl from-gray-900 via-purple-900 to-black"
-          style={{ width: `${darkPercentage}%` }}
+          className="relative transition-all ease-out"
+          style={{ 
+            width: `${darkPercentage}%`,
+            background: 'linear-gradient(135deg, #1e1e2e 0%, #2d2d4a 50%, #3a3a5c 100%)'
+          }}
         >
           {/* Dark Theme Background Effects */}
           <div className="absolute inset-0">
-            {/* Animated dark energy */}
-            <div className="absolute top-0 left-1/4 w-1 h-full bg-gradient-to-b from-purple-500 to-transparent opacity-40 animate-pulse" />
-            <div className="absolute top-0 right-1/4 w-1 h-full bg-gradient-to-b from-indigo-500 to-transparent opacity-40 animate-pulse" style={{ animationDelay: '1s' }} />
+            {/* Code-like grid pattern */}
+            <div className="absolute inset-0 opacity-10" style={{
+              backgroundImage: `
+                linear-gradient(rgba(108,113,196,0.3) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(108,113,196,0.3) 1px, transparent 1px)
+              `,
+              backgroundSize: '24px 24px'
+            }} />
             
-            {/* Floating dark particles */}
-            <div className="absolute top-1/4 left-1/3 w-2 h-2 bg-purple-400 rounded-full animate-bounce opacity-60" style={{ animationDelay: '0.5s' }} />
-            <div className="absolute top-1/2 right-1/4 w-1 h-1 bg-indigo-400 rounded-full animate-bounce opacity-60" style={{ animationDelay: '1.5s' }} />
-            <div className="absolute bottom-1/4 left-1/2 w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce opacity-80" style={{ animationDelay: '2s' }} />
+            {/* Floating code particles */}
+            <div className="absolute top-1/4 left-1/3 text-sm opacity-60 animate-pulse" style={{ animationDelay: '0.5s', color: '#6c71c4' }}>{'( )'}</div>
+            <div className="absolute top-1/2 right-1/4 text-sm opacity-60 animate-pulse" style={{ animationDelay: '1.5s', color: '#f92672' }}>{'=>'}</div>
+            <div className="absolute bottom-1/4 left-1/2 text-sm opacity-60 animate-pulse" style={{ animationDelay: '2s', color: '#a6e22e' }}>{'/*'}</div>
           </div>
 
           {/* Dark Theme Content */}
           <div className="relative z-10 h-full flex flex-col items-center justify-center p-8 text-center">
             <div className="mb-6">
-              <div className="text-6xl mb-4 animate-bounce">🌙</div>
-              <h2 className="text-3xl font-bold text-white mb-2">Dark Dominates</h2>
-              <p className="text-gray-300">Embracing mystery and depth</p>
+              <div className="text-6xl mb-4">🌌</div>
+              <h2 className="text-3xl font-mono font-bold mb-2" style={{ color: '#f8f8f2' }}>Dark Mode</h2>
+              <p className="font-mono text-sm" style={{ color: '#75715e' }}>for the night shift developers</p>
             </div>
             
             {/* Theme stats */}
-            <div className="bg-black/20 backdrop-blur-sm rounded-lg p-3 text-center">
-              <div className="text-sm font-semibold mb-1">Dark Forces</div>
-              <div className="text-2xl font-bold">{darkPercentage.toFixed(1)}%</div>
-              <div className="text-xs opacity-75">
-                {balancePercentage < 0 ? 'Advancing!' : 'Defending'}
+            <div className="backdrop-blur-sm rounded border p-3 text-center font-mono" style={{ 
+              backgroundColor: 'rgba(40, 42, 54, 0.8)',
+              borderColor: '#6272a4'
+            }}>
+              <div className="text-xs mb-1" style={{ color: '#6272a4' }}>territory</div>
+              <div className="text-2xl font-bold" style={{ color: '#50fa7b' }}>{darkPercentage.toFixed(1)}%</div>
+              <div className="text-xs" style={{ color: '#6272a4' }}>
+                {balancePercentage < 0 ? 'expanding' : 'holding'}
               </div>
             </div>
           </div>
@@ -263,35 +344,64 @@ const fightForDark = useCallback(async () => {
       </div>
 
       {/* Victory Screen Overlay */}
-      {showVictory && (
+      {showVictory && hasWinner && (
         <VictoryScreen
-          winner={hasWinner!}
-          onPlayAgain={handlePlayAgain}
+          winner={hasWinner}
           finalScore={counterValue}
           onClose={() => setShowVictory(false)}
+          lightWins={lightWins}
+          darkWins={darkWins}
+          countdown={countdown}
         />
       )}
 
+      {/* Score Display */}
+      <div className="absolute top-4 left-4 z-20 bg-black/80 backdrop-blur-sm rounded border border-gray-600 p-4 text-white font-mono">
+        <div className="text-xs opacity-75 mb-3 text-center">// battle_stats</div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <span>🌅</span>
+              <span className="text-gray-300 text-sm">light_wins</span>
+            </span>
+            <span className="font-bold text-lg">{lightWins}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <span>🌌</span>
+              <span className="text-gray-300 text-sm">dark_wins</span>
+            </span>
+            <span className="font-bold text-lg">{darkWins}</span>
+          </div>
+        </div>
+        {countdown && (
+          <div className="mt-3 pt-3 border-t border-gray-600 text-center">
+            <div className="text-xs opacity-75 mb-1">next_battle_in</div>
+            <div className="font-bold text-xl">{countdown}s</div>
+          </div>
+        )}
+      </div>
+
       {/* Test Controls Panel */}
-      <div className="absolute top-4 right-4 z-20 bg-black/50 backdrop-blur-sm rounded-lg p-4 text-white">
-        <div className="text-sm font-semibold mb-3 text-center">🧪 Test Controls</div>
+      <div className="absolute top-4 right-4 z-20 bg-black/80 backdrop-blur-sm rounded border border-gray-600 p-4 text-white font-mono">
+        <div className="text-xs opacity-75 mb-3 text-center">// debug_controls</div>
         <div className="space-y-2">
           <button
             onClick={testLight10}
-            className="w-full px-3 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded transition-colors text-sm"
-            title="Add 10 points for Light theme (testing only)"
+            className="w-full px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white font-mono rounded border border-gray-500 transition-colors text-xs"
+            title="Add 10 points for Light mode (testing)"
           >
-            ☀️ +10 Light
+            🌅 light += 10
           </button>
           <button
             onClick={testDark10}
-            className="w-full px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded transition-colors text-sm"
-            title="Add 10 points for Dark theme (testing only)"
+            className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white font-mono rounded border border-gray-500 transition-colors text-xs"
+            title="Add 10 points for Dark mode (testing)"
           >
-            🌙 +10 Dark
+            🌌 dark += 10
           </button>
         </div>
-        <div className="text-xs opacity-75 mt-2 text-center">For testing only</div>
+        <div className="text-xs opacity-60 mt-2 text-center">dev_mode_only</div>
       </div>
 
       {/* Accessibility Announcements */}
