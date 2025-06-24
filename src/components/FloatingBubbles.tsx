@@ -106,7 +106,6 @@ export const FloatingBubbles: React.FC<FloatingBubblesProps> = ({
     }, 100); // Click cooldown
 
     // Calculate points based on bubble size (smaller = more points)
-const points = 1; // Fixed point value for each bubble
 
     // Start pop animation
     setPoppingBubbles(prev => new Set(prev).add(bubble.bubbleId));

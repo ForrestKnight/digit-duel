@@ -3,27 +3,6 @@ import { v } from "convex/values";
 
 const GLOBAL_COUNTER_NAME = "global";
 
-/**
- * Security-enhanced error class for counter operations.
- */
-class CounterSecurityError extends Error {
-  public readonly type: string;
-  public readonly violations: any[];
-  public readonly shouldBlock: boolean;
-
-  constructor(
-    message: string,
-    type: string,
-    violations: any[] = [],
-    shouldBlock: boolean = false
-  ) {
-    super(message);
-    this.name = 'CounterSecurityError';
-    this.type = type;
-    this.violations = violations;
-    this.shouldBlock = shouldBlock;
-  }
-}
 
 /**
  * Lightweight logging function that only logs to console instead of database.
@@ -86,8 +65,7 @@ export const secureIncrement = mutation({
     clientTimestamp: v.number(),
     metadata: v.optional(v.any()),
   },
-  handler: async (ctx, { fingerprint, clientTimestamp, metadata = {} }): Promise<number> => {
-    const startTime = Date.now();
+  handler: async (ctx, { fingerprint, clientTimestamp }): Promise<number> => {
     let previousValue = 0;
     let newValue = 0;
     let success = false;
@@ -95,7 +73,7 @@ export const secureIncrement = mutation({
 
     try {
       // Simple validation without database writes
-      const validation = await validateSimpleOperation(fingerprint, clientTimestamp);
+      await validateSimpleOperation(fingerprint, clientTimestamp);
 
       // Get the current counter or create it if it doesn't exist
       const existingCounter = await ctx.db
@@ -159,8 +137,7 @@ export const secureDecrement = mutation({
     clientTimestamp: v.number(),
     metadata: v.optional(v.any()),
   },
-  handler: async (ctx, { fingerprint, clientTimestamp, metadata = {} }): Promise<number> => {
-    const startTime = Date.now();
+  handler: async (ctx, { fingerprint, clientTimestamp }): Promise<number> => {
     let previousValue = 0;
     let newValue = 0;
     let success = false;
@@ -168,7 +145,7 @@ export const secureDecrement = mutation({
 
     try {
       // Simple validation without database writes
-      const validation = await validateSimpleOperation(fingerprint, clientTimestamp);
+      await validateSimpleOperation(fingerprint, clientTimestamp);
 
       // Get the current counter or create it if it doesn't exist
       const existingCounter = await ctx.db
@@ -287,8 +264,7 @@ export const secureReset = mutation({
     clientTimestamp: v.number(),
     metadata: v.optional(v.any()),
   },
-  handler: async (ctx, { fingerprint, clientTimestamp, metadata = {} }): Promise<number> => {
-    const startTime = Date.now();
+  handler: async (ctx, { fingerprint, clientTimestamp }): Promise<number> => {
     let previousValue = 0;
     let newValue = 0;
     let success = false;
@@ -296,7 +272,7 @@ export const secureReset = mutation({
 
     try {
       // Simple validation without database writes
-      const validation = await validateSimpleOperation(fingerprint, clientTimestamp);
+      await validateSimpleOperation(fingerprint, clientTimestamp);
 
       const existingCounter = await ctx.db
         .query("counters")
