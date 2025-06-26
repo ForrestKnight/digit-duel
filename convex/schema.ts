@@ -23,6 +23,8 @@ export default defineSchema({
     value: v.number(),
     /** Unique identifier for the counter instance */
     name: v.string(),
+    /** Timestamp of last update (optional for backward compatibility) */
+    lastUpdated: v.optional(v.number()),
     /** Version number for optimistic concurrency control (updated less frequently) */
     version: v.number(),
   })
@@ -35,6 +37,8 @@ export default defineSchema({
   rateLimitStates: defineTable({
     /** Client fingerprint for tracking */
     fingerprint: v.string(),
+    /** Client IP address (if available) */
+    ipAddress: v.optional(v.string()),
     /** Timestamp of last operation */
     lastOperation: v.number(),
     /** Number of operations in current time window */
@@ -49,10 +53,29 @@ export default defineSchema({
     isBlocked: v.boolean(),
     /** Timestamp when block expires */
     blockExpiresAt: v.optional(v.number()),
+    /** Total operations today */
+    dailyOperationCount: v.optional(v.number()),
+    /** Start of current day (for daily limits) */
+    dayStart: v.optional(v.number()),
+    /** Session operation count */
+    sessionOperationCount: v.optional(v.number()),
+    /** Session start timestamp */
+    sessionStart: v.optional(v.number()),
+    /** Hourly operation count */
+    hourlyOperationCount: v.optional(v.number()),
+    /** Start of current hour */
+    hourStart: v.optional(v.number()),
+    /** Bot suspicion score (0-100) */
+    suspicionScore: v.optional(v.number()),
+    /** Timestamp when first seen */
+    firstSeen: v.optional(v.number()),
   })
     .index("by_fingerprint", ["fingerprint"])
+    .index("by_ip_address", ["ipAddress"])
     .index("by_last_operation", ["lastOperation"])
-    .index("by_block_status", ["isBlocked", "blockExpiresAt"]),
+    .index("by_block_status", ["isBlocked", "blockExpiresAt"])
+    .index("by_suspicion_score", ["suspicionScore"])
+    .index("by_daily_count", ["dailyOperationCount", "dayStart"]),
 
   /**
    * Security events log for monitoring and analysis.

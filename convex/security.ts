@@ -6,19 +6,49 @@ import { v } from "convex/values";
  * These values are tuned for optimal security while maintaining usability.
  */
 const SECURITY_CONFIG = {
-  // Rate limiting: Max 1 operation per 100ms per client
+  // Progressive rate limiting based on usage patterns
   RATE_LIMIT: {
-    MIN_INTERVAL_MS: 100,
+    // Base rate limit for new users
+    BASE_MIN_INTERVAL_MS: 100,
+    
+    // Progressive intervals based on operation count
+    PROGRESSIVE_INTERVALS: {
+      LIGHT_USAGE: { threshold: 10, intervalMs: 150 },   // After 10 ops: 150ms
+      MODERATE_USAGE: { threshold: 50, intervalMs: 300 }, // After 50 ops: 300ms
+      HEAVY_USAGE: { threshold: 100, intervalMs: 1000 }, // After 100 ops: 1s
+      EXCESSIVE_USAGE: { threshold: 200, intervalMs: 5000 }, // After 200 ops: 5s
+    },
+    
     MAX_OPERATIONS_PER_WINDOW: 10,
     WINDOW_MS: 1000,
     BACKOFF_MULTIPLIER: 2,
     MAX_BACKOFF_MS: 30000, // 30 seconds max
   },
   
+  // Daily/session limits to prevent script abuse
+  USAGE_LIMITS: {
+    MAX_DAILY_OPERATIONS: 500,    // Max 500 clicks per day
+    MAX_SESSION_OPERATIONS: 200,  // Max 200 clicks per session
+    MAX_HOURLY_OPERATIONS: 100,   // Max 100 clicks per hour
+    SESSION_TIMEOUT_MS: 3600000,  // 1 hour session timeout
+  },
+  
+  // Bot detection thresholds
+  BOT_DETECTION: {
+    SUSPICIOUS_ACTIVITY_THRESHOLD: 5,
+    MAX_VIOLATIONS_BEFORE_BLOCK: 3,
+    HIGH_SUSPICION_SCORE: 70,     // Block at 70+ suspicion
+    CRITICAL_SUSPICION_SCORE: 90, // Immediate block at 90+
+    
+    // Behavioral analysis
+    MIN_HUMAN_VARIANCE_MS: 50,    // Humans vary by at least 50ms
+    MAX_CONSISTENT_INTERVALS: 5,  // More than 5 consistent = bot
+    RAPID_FIRE_THRESHOLD_MS: 25,  // Faster than 25ms = likely bot
+  },
+  
   // Security thresholds
-  SUSPICIOUS_ACTIVITY_THRESHOLD: 5,
   MAX_VIOLATIONS_BEFORE_BLOCK: 3,
-  BLOCK_DURATION_MS: 60000, // 1 minute initial block
+  BLOCK_DURATION_MS: 300000, // 5 minute initial block (increased)
   
   // Validation limits
   MAX_CLIENT_TIMESTAMP_DRIFT_MS: 5000, // 5 seconds
@@ -159,7 +189,7 @@ function checkRateLimit(state: any, now: number, operation: string) {
   const timeSinceLastOp = now - state.lastOperation;
   
   // Check minimum interval between operations
-  if (timeSinceLastOp < SECURITY_CONFIG.RATE_LIMIT.MIN_INTERVAL_MS) {
+  if (timeSinceLastOp < SECURITY_CONFIG.RATE_LIMIT.BASE_MIN_INTERVAL_MS) {
     return {
       type: SecurityViolationType.RATE_LIMIT_EXCEEDED,
       severity: 'high' as const,
@@ -167,7 +197,7 @@ function checkRateLimit(state: any, now: number, operation: string) {
       context: {
         operation,
         timeSinceLastOp,
-        minInterval: SECURITY_CONFIG.RATE_LIMIT.MIN_INTERVAL_MS,
+        minInterval: SECURITY_CONFIG.RATE_LIMIT.BASE_MIN_INTERVAL_MS,
       },
     };
   }
@@ -228,15 +258,19 @@ async function updateRateLimitState(ctx: any, fingerprint: string, now: number, 
     return; // Skip database write for this operation
   }
 
+  const dayStart = new Date(now).setHours(0, 0, 0, 0);
+  const hourStart = new Date(now).setMinutes(0, 0, 0);
+  
   const newState = {
     fingerprint,
+    ipAddress: existing?.ipAddress,
     lastOperation: now,
     operationCount,
     windowStart: shouldResetWindow ? now : (existing?.windowStart || now),
     violationCount: hasViolation ? (existing?.violationCount || 0) + 1 : (existing?.violationCount || 0),
     backoffMs: hasViolation 
       ? Math.min(
-          (existing?.backoffMs || SECURITY_CONFIG.RATE_LIMIT.MIN_INTERVAL_MS) * SECURITY_CONFIG.RATE_LIMIT.BACKOFF_MULTIPLIER,
+          (existing?.backoffMs || SECURITY_CONFIG.RATE_LIMIT.BASE_MIN_INTERVAL_MS) * SECURITY_CONFIG.RATE_LIMIT.BACKOFF_MULTIPLIER,
           SECURITY_CONFIG.RATE_LIMIT.MAX_BACKOFF_MS
         )
       : Math.max((existing?.backoffMs || 0) * 0.5, 0),
@@ -244,6 +278,15 @@ async function updateRateLimitState(ctx: any, fingerprint: string, now: number, 
     blockExpiresAt: (existing?.violationCount || 0) >= SECURITY_CONFIG.MAX_VIOLATIONS_BEFORE_BLOCK 
       ? now + SECURITY_CONFIG.BLOCK_DURATION_MS
       : existing?.blockExpiresAt,
+    // New enhanced tracking fields
+    dailyOperationCount: existing?.dayStart === dayStart ? (existing?.dailyOperationCount || 0) + 1 : 1,
+    dayStart,
+    sessionOperationCount: (existing?.sessionOperationCount || 0) + 1,
+    sessionStart: existing?.sessionStart || now,
+    hourlyOperationCount: existing?.hourStart === hourStart ? (existing?.hourlyOperationCount || 0) + 1 : 1,
+    hourStart,
+    suspicionScore: existing?.suspicionScore || 0,
+    firstSeen: existing?.firstSeen || now,
   };
 
   if (existing) {
@@ -379,8 +422,12 @@ export const manageClientBlock = mutation({
       .first();
 
     const now = Date.now();
+    const dayStart = new Date(now).setHours(0, 0, 0, 0);
+    const hourStart = new Date(now).setMinutes(0, 0, 0);
+    
     const newState = {
       fingerprint,
+      ipAddress: existing?.ipAddress,
       lastOperation: existing?.lastOperation || now,
       operationCount: existing?.operationCount || 0,
       windowStart: existing?.windowStart || now,
@@ -388,6 +435,14 @@ export const manageClientBlock = mutation({
       backoffMs: action === "block" ? SECURITY_CONFIG.RATE_LIMIT.MAX_BACKOFF_MS : 0,
       isBlocked: action === "block",
       blockExpiresAt: action === "block" ? now + durationMs : undefined,
+      dailyOperationCount: existing?.dailyOperationCount || 0,
+      dayStart: existing?.dayStart || dayStart,
+      sessionOperationCount: existing?.sessionOperationCount || 0,
+      sessionStart: existing?.sessionStart || now,
+      hourlyOperationCount: existing?.hourlyOperationCount || 0,
+      hourStart: existing?.hourStart || hourStart,
+      suspicionScore: existing?.suspicionScore || 0,
+      firstSeen: existing?.firstSeen || now,
     };
 
     if (existing) {

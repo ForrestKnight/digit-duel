@@ -240,6 +240,56 @@ const DEFAULT_SECURE_CONFIG: SecureCounterConfig = {
  * @param config - Security configuration options
  * @returns Counter state and secure operation functions
  */
+/**
+ * Tracks daily operation count in localStorage for progressive rate limiting.
+ */
+function getDailyOperationCount(): number {
+  try {
+    const today = new Date().toDateString();
+    const stored = localStorage.getItem(`digit-duel-ops-${today}`);
+    return stored ? parseInt(stored, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Increments daily operation count in localStorage.
+ */
+function incrementDailyOperationCount(): void {
+  try {
+    const today = new Date().toDateString();
+    const current = getDailyOperationCount();
+    localStorage.setItem(`digit-duel-ops-${today}`, (current + 1).toString());
+    
+    // Clean up old entries (keep only today)
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('digit-duel-ops-') && !key.includes(today)) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+/**
+ * Gets client-side rate limit based on usage patterns.
+ */
+function getClientRateLimit(): number {
+  const dailyOps = getDailyOperationCount();
+  
+  // Progressive rate limiting on client side
+  if (dailyOps >= 400) return 10000; // 10 seconds after 400 operations
+  if (dailyOps >= 300) return 5000;  // 5 seconds after 300 operations  
+  if (dailyOps >= 200) return 2000;  // 2 seconds after 200 operations
+  if (dailyOps >= 100) return 1000;  // 1 second after 100 operations
+  if (dailyOps >= 50) return 300;    // 300ms after 50 operations
+  if (dailyOps >= 10) return 150;    // 150ms after 10 operations
+  return 75; // Base rate: 75ms (slightly more lenient than server)
+}
+
 export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): UseCounterReturn => {
   const finalConfig = { ...DEFAULT_SECURE_CONFIG, ...config };
   
@@ -369,12 +419,14 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
       throw new Error(`Rate limited. Please wait ${Math.ceil(remainingMs / 1000)} seconds.`);
     }
     
-    // Rate limiting disabled for testing
-    // const timeSinceLastOp = now - lastOperationRef.current;
-    // if (timeSinceLastOp < 25 && lastOperationRef.current > 0) {
-    //   handleSecurityViolation(new Error('Rate limit exceeded: minimum 25ms between operations'));
-    //   return;
-    // }
+    // Client-side progressive rate limiting (prevents most spam before it hits the server)
+    const timeSinceLastOp = now - lastOperationRef.current;
+    const minInterval = getClientRateLimit();
+    
+    if (timeSinceLastOp < minInterval && lastOperationRef.current > 0) {
+      handleSecurityViolation(new Error(`Rate limit exceeded: minimum ${minInterval}ms between operations`));
+      return;
+    }
     
     setError(null);
     setIsLoading(true);
@@ -417,6 +469,9 @@ export const useSecureCounter = (config: Partial<SecureCounterConfig> = {}): Use
       while (attempt <= finalConfig.retryConfig.maxRetries) {
         try {
           await mutation(operationParams);
+          
+          // Track successful operations for progressive rate limiting
+          incrementDailyOperationCount();
           
           // Only update state if this is still the current operation
           if (operationId === operationIdRef.current) {

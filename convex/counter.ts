@@ -22,12 +22,15 @@ function logOperationToConsole(
 }
 
 /**
- * Simple validation for counter operations without database writes.
- * Only performs basic checks without creating audit records.
+ * Enhanced security validation with progressive rate limiting and bot detection.
+ * Integrates with the comprehensive security system for maximum protection.
  */
-async function validateSimpleOperation(
+async function validateEnhancedOperation(
+  ctx: any,
   inputFingerprint: string,
-  clientTimestamp: number
+  clientTimestamp: number,
+  operation: 'increment' | 'decrement' | 'reset',
+  metadata?: any
 ) {
   const now = Date.now();
 
@@ -37,13 +40,255 @@ async function validateSimpleOperation(
     fingerprint = 'anonymous-' + Math.random().toString(36).substring(2, 15);
   }
 
-  // Basic timestamp validation (10-second drift allowance for simplicity)
-  const timeDrift = Math.abs(now - clientTimestamp);
-  if (timeDrift > 10000) {
-    throw new Error('Invalid timestamp: client clock appears to be out of sync');
+  // Get or create enhanced rate limit state
+  const rateLimitState = await getEnhancedRateLimitState(ctx, fingerprint);
+  
+  // Check all security constraints
+  const securityCheck = await performSecurityChecks(ctx, rateLimitState, now, operation, clientTimestamp);
+  
+  if (!securityCheck.isValid) {
+    throw new Error(`Security violation: ${securityCheck.violations.map(v => v.type).join(', ')}`);
   }
+  
+  // Update rate limit state
+  await updateEnhancedRateLimitState(ctx, fingerprint, now, operation);
+  
+  return { fingerprint, rateLimitState: securityCheck.updatedState };
+}
 
-  return { fingerprint };
+/**
+ * Gets or creates enhanced rate limit state with all tracking fields.
+ */
+async function getEnhancedRateLimitState(ctx: any, fingerprint: string) {
+  const existing = await ctx.db
+    .query("rateLimitStates")
+    .withIndex("by_fingerprint", (q: any) => q.eq("fingerprint", fingerprint))
+    .first();
+    
+  const now = Date.now();
+  const dayStart = new Date(now).setHours(0, 0, 0, 0);
+  const hourStart = new Date(now).setMinutes(0, 0, 0);
+  
+  if (!existing) {
+    return {
+      fingerprint,
+      ipAddress: null,
+      lastOperation: 0,
+      operationCount: 0,
+      windowStart: now,
+      backoffMs: 0,
+      violationCount: 0,
+      isBlocked: false,
+      blockExpiresAt: null,
+      dailyOperationCount: 0,
+      dayStart,
+      sessionOperationCount: 0,
+      sessionStart: now,
+      hourlyOperationCount: 0,
+      hourStart,
+      suspicionScore: 0,
+      firstSeen: now,
+    };
+  }
+  
+  // Reset daily count if new day
+  if (existing.dayStart < dayStart) {
+    existing.dailyOperationCount = 0;
+    existing.dayStart = dayStart;
+  }
+  
+  // Reset hourly count if new hour
+  if (existing.hourStart < hourStart) {
+    existing.hourlyOperationCount = 0;
+    existing.hourStart = hourStart;
+  }
+  
+  // Reset session if timed out
+  const sessionAge = now - existing.sessionStart;
+  if (sessionAge > 3600000) { // 1 hour session timeout
+    existing.sessionOperationCount = 0;
+    existing.sessionStart = now;
+  }
+  
+  return existing;
+}
+
+/**
+ * Performs comprehensive security checks including progressive rate limiting.
+ */
+async function performSecurityChecks(
+  ctx: any,
+  state: any,
+  now: number,
+  operation: string,
+  clientTimestamp: number
+) {
+  const violations: Array<{ type: string; severity: string; context: any }> = [];
+  
+  // 1. Basic timestamp validation
+  const timeDrift = Math.abs(now - clientTimestamp);
+  if (timeDrift > 5000) {
+    violations.push({
+      type: 'INVALID_TIMESTAMP',
+      severity: 'medium',
+      context: { drift: timeDrift }
+    });
+  }
+  
+  // 2. Check if blocked
+  if (state.isBlocked && state.blockExpiresAt && now < state.blockExpiresAt) {
+    violations.push({
+      type: 'CLIENT_BLOCKED',
+      severity: 'critical',
+      context: { remainingTime: state.blockExpiresAt - now }
+    });
+  }
+  
+  // 3. Progressive rate limiting based on usage
+  const timeSinceLastOp = now - state.lastOperation;
+  const progressiveInterval = getProgressiveInterval(state.dailyOperationCount);
+  
+  if (timeSinceLastOp < progressiveInterval && state.lastOperation > 0) {
+    violations.push({
+      type: 'PROGRESSIVE_RATE_LIMIT',
+      severity: 'high',
+      context: { 
+        required: progressiveInterval, 
+        actual: timeSinceLastOp,
+        dailyOps: state.dailyOperationCount 
+      }
+    });
+  }
+  
+  // 4. Daily limit check
+  if (state.dailyOperationCount >= 500) {
+    violations.push({
+      type: 'DAILY_LIMIT_EXCEEDED',
+      severity: 'critical',
+      context: { dailyCount: state.dailyOperationCount }
+    });
+  }
+  
+  // 5. Session limit check
+  if (state.sessionOperationCount >= 200) {
+    violations.push({
+      type: 'SESSION_LIMIT_EXCEEDED',
+      severity: 'high',
+      context: { sessionCount: state.sessionOperationCount }
+    });
+  }
+  
+  // 6. Hourly limit check
+  if (state.hourlyOperationCount >= 100) {
+    violations.push({
+      type: 'HOURLY_LIMIT_EXCEEDED',
+      severity: 'high',
+      context: { hourlyCount: state.hourlyOperationCount }
+    });
+  }
+  
+  // 7. Bot behavior detection
+  const botCheck = await detectBotBehavior(ctx, state, now, timeSinceLastOp);
+  if (botCheck) {
+    violations.push(botCheck);
+  }
+  
+  return {
+    isValid: violations.length === 0,
+    violations,
+    updatedState: state
+  };
+}
+
+/**
+ * Calculates progressive rate limiting interval based on usage.
+ */
+function getProgressiveInterval(dailyOps: number): number {
+  if (dailyOps >= 200) return 5000;  // 5 seconds after 200 operations
+  if (dailyOps >= 100) return 1000;  // 1 second after 100 operations
+  if (dailyOps >= 50) return 300;    // 300ms after 50 operations
+  if (dailyOps >= 10) return 150;    // 150ms after 10 operations
+  return 100; // Base rate: 100ms
+}
+
+/**
+ * Detects potential bot behavior patterns.
+ */
+async function detectBotBehavior(ctx: any, state: any, now: number, timeSinceLastOp: number) {
+  // Very rapid clicks (faster than humanly possible)
+  if (timeSinceLastOp < 25 && state.lastOperation > 0) {
+    return {
+      type: 'RAPID_FIRE_DETECTED',
+      severity: 'critical',
+      context: { interval: timeSinceLastOp }
+    };
+  }
+  
+  // Get recent operation intervals for pattern analysis
+  const recentEvents = await ctx.db
+    .query("securityEvents")
+    .withIndex("by_fingerprint_timestamp", (q: any) => 
+      q.eq("fingerprint", state.fingerprint).gte("timestamp", now - 30000)
+    )
+    .take(10);
+    
+  if (recentEvents.length >= 5) {
+    // Check for suspiciously consistent timing
+    const intervals = [];
+    for (let i = 1; i < recentEvents.length; i++) {
+      intervals.push(recentEvents[i].timestamp - recentEvents[i-1].timestamp);
+    }
+    
+    const variance = calculateVariance(intervals);
+    if (variance < 100 && intervals.length >= 5) { // Very low variance = likely bot
+      return {
+        type: 'CONSISTENT_TIMING_PATTERN',
+        severity: 'high',
+        context: { variance, intervals }
+      };
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Updates enhanced rate limit state with all counters.
+ */
+async function updateEnhancedRateLimitState(
+  ctx: any,
+  fingerprint: string,
+  now: number,
+  operation: string
+) {
+  const existing = await getEnhancedRateLimitState(ctx, fingerprint);
+  
+  const newState = {
+    ...existing,
+    lastOperation: now,
+    operationCount: existing.operationCount + 1,
+    dailyOperationCount: existing.dailyOperationCount + 1,
+    sessionOperationCount: existing.sessionOperationCount + 1,
+    hourlyOperationCount: existing.hourlyOperationCount + 1,
+  };
+  
+  // Only update database every 5 operations to reduce bandwidth
+  if (newState.operationCount % 5 === 0 || !existing._id) {
+    if (existing._id) {
+      await ctx.db.patch(existing._id, newState);
+    } else {
+      await ctx.db.insert("rateLimitStates", newState);
+    }
+  }
+}
+
+/**
+ * Calculates variance of an array of numbers.
+ */
+function calculateVariance(numbers: number[]): number {
+  const mean = numbers.reduce((a, b) => a + b, 0) / numbers.length;
+  const squaredDiffs = numbers.map(num => Math.pow(num - mean, 2));
+  return squaredDiffs.reduce((a, b) => a + b, 0) / numbers.length;
 }
 
 /**
@@ -72,8 +317,8 @@ export const secureIncrement = mutation({
     let errorMessage: string | undefined;
 
     try {
-      // Simple validation without database writes
-      await validateSimpleOperation(fingerprint, clientTimestamp);
+      // Enhanced security validation with progressive rate limiting
+      await validateEnhancedOperation(ctx, fingerprint, clientTimestamp, 'increment');
 
       // Get the current counter or create it if it doesn't exist
       const existingCounter = await ctx.db
@@ -143,8 +388,8 @@ export const secureDecrement = mutation({
     let errorMessage: string | undefined;
 
     try {
-      // Simple validation without database writes
-      await validateSimpleOperation(fingerprint, clientTimestamp);
+      // Enhanced security validation with progressive rate limiting
+      await validateEnhancedOperation(ctx, fingerprint, clientTimestamp, 'decrement');
 
       // Get the current counter or create it if it doesn't exist
       const existingCounter = await ctx.db
@@ -269,8 +514,8 @@ export const secureReset = mutation({
     let errorMessage: string | undefined;
 
     try {
-      // Simple validation without database writes
-      await validateSimpleOperation(fingerprint, clientTimestamp);
+      // Enhanced security validation with progressive rate limiting
+      await validateEnhancedOperation(ctx, fingerprint, clientTimestamp, 'reset');
 
       const existingCounter = await ctx.db
         .query("counters")
