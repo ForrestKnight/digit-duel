@@ -30,7 +30,7 @@ async function validateEnhancedOperation(
   inputFingerprint: string,
   clientTimestamp: number,
   operation: 'increment' | 'decrement' | 'reset',
-  metadata?: any
+  _metadata?: any
 ) {
   const now = Date.now();
 
@@ -120,7 +120,7 @@ async function performSecurityChecks(
   ctx: any,
   state: any,
   now: number,
-  operation: string,
+  _operation: string,
   clientTimestamp: number
 ) {
   const violations: Array<{ type: string; severity: string; context: any }> = [];
@@ -259,7 +259,7 @@ async function updateEnhancedRateLimitState(
   ctx: any,
   fingerprint: string,
   now: number,
-  operation: string
+  _operation: string
 ) {
   const existing = await getEnhancedRateLimitState(ctx, fingerprint);
   
