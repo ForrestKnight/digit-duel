@@ -72,14 +72,14 @@ async function getEnhancedRateLimitState(ctx: any, fingerprint: string) {
   if (!existing) {
     return {
       fingerprint,
-      ipAddress: null,
+      ipAddress: undefined,
       lastOperation: 0,
       operationCount: 0,
       windowStart: now,
       backoffMs: 0,
       violationCount: 0,
       isBlocked: false,
-      blockExpiresAt: null,
+      blockExpiresAt: undefined,
       dailyOperationCount: 0,
       dayStart,
       sessionOperationCount: 0,
