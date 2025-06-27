@@ -96,7 +96,7 @@ export const recordVictory = mutation({
           };
         } else {
           // Use optimistic concurrency control
-          const currentVersion = existingStats.updatedAt;
+          // const currentVersion = existingStats.updatedAt;
 
           const updatedStats = {
             lightWins: existingStats.lightWins + (winner === "light" ? 1 : 0),
