@@ -30,6 +30,66 @@ export interface Bubble {
 }
 
 /**
+ * Atomically creates a bubble with retry logic for handling write conflicts.
+ */
+async function atomicCreateBubbleWithRetry(ctx: any, args: any, maxRetries = 3): Promise<string> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Check if bubble with this ID already exists
+      const existingBubble = await ctx.db
+        .query("bubbles")
+        .withIndex("by_bubble_id", (q: any) => q.eq("bubbleId", args.bubbleId))
+        .first();
+
+      if (existingBubble) {
+        // Update existing bubble position with optimistic concurrency
+        try {
+          await ctx.db.patch(existingBubble._id, {
+            x: args.x,
+            y: args.y,
+            vx: args.vx,
+            vy: args.vy,
+          });
+          return existingBubble._id;
+        } catch (patchError) {
+          if (attempt === maxRetries - 1) throw patchError;
+          // Add exponential backoff
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 5));
+          continue;
+        }
+      }
+
+      // Check bubble count with a more efficient query
+      const bubbleCount = await ctx.db
+        .query("bubbles")
+        .filter((q: any) => q.neq(q.field("isPopping"), true))
+        .collect()
+        .then((bubbles: any[]) => bubbles.length);
+      
+      if (bubbleCount >= GAME_CONFIG.maxBubbles) {
+        throw new Error(`Maximum bubble limit reached (${GAME_CONFIG.maxBubbles})`);
+      }
+
+      // Create new bubble
+      try {
+        const bubbleId = await ctx.db.insert("bubbles", args);
+        return bubbleId;
+      } catch (insertError) {
+        if (attempt === maxRetries - 1) throw insertError;
+        // Add exponential backoff
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 5));
+        continue;
+      }
+    } catch (error) {
+      if (attempt === maxRetries - 1) throw error;
+      // Add exponential backoff
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 5));
+    }
+  }
+  throw new Error('Failed to create bubble after maximum retries');
+}
+
+/**
  * Creates a new bubble and adds it to the game state.
  * 
  * @param bubble - The bubble data to create
@@ -49,34 +109,7 @@ export const createBubble = mutation({
     gameSessionId: v.string(),
   },
   handler: async (ctx, args): Promise<string> => {
-    // Check if bubble with this ID already exists
-    const existingBubble = await ctx.db
-      .query("bubbles")
-      .withIndex("by_bubble_id", (q) => q.eq("bubbleId", args.bubbleId))
-      .first();
-
-    if (existingBubble) {
-      // Update existing bubble position
-      await ctx.db.patch(existingBubble._id, {
-        x: args.x,
-        y: args.y,
-        vx: args.vx,
-        vy: args.vy,
-      });
-      return existingBubble._id;
-    }
-
-    // Check if we're at max bubbles limit
-    const allBubbles = await ctx.db.query("bubbles").collect();
-    const activeBubbles = allBubbles.filter(bubble => !bubble.isPopping);
-    
-    if (activeBubbles.length >= GAME_CONFIG.maxBubbles) {
-      throw new Error(`Maximum bubble limit reached (${GAME_CONFIG.maxBubbles})`);
-    }
-
-    // Create new bubble
-    const bubbleId = await ctx.db.insert("bubbles", args);
-    return bubbleId;
+    return await atomicCreateBubbleWithRetry(ctx, args);
   },
 });
 

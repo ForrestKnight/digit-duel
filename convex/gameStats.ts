@@ -66,50 +66,65 @@ export const recordVictory = mutation({
   },
   handler: async (ctx, { winner }): Promise<GameStats> => {
     const now = Date.now();
+    let existingStats;
 
-    // Get existing stats or create if none exist
-    let existingStats = await ctx.db
-      .query("gameStats")
-      .withIndex("by_stats_id", (q) => q.eq("statsId", GLOBAL_STATS_ID))
-      .first();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // Get existing stats or create if none exist
+      existingStats = await ctx.db
+        .query("gameStats")
+        .withIndex("by_stats_id", (q) => q.eq("statsId", GLOBAL_STATS_ID))
+        .first();
 
-    if (!existingStats) {
-      // Create initial stats record
-      const initialStats = {
-        statsId: GLOBAL_STATS_ID,
-        lightWins: winner === "light" ? 1 : 0,
-        darkWins: winner === "dark" ? 1 : 0,
-        totalBattles: 1,
-        lastBattleAt: now,
-        createdAt: now,
-        updatedAt: now,
-      };
+      try {
+        if (!existingStats) {
+          // Create initial stats record
+          const initialStats = {
+            statsId: GLOBAL_STATS_ID,
+            lightWins: winner === "light" ? 1 : 0,
+            darkWins: winner === "dark" ? 1 : 0,
+            totalBattles: 1,
+            lastBattleAt: now,
+            createdAt: now,
+            updatedAt: now,
+          };
 
-      const statsId = await ctx.db.insert("gameStats", initialStats);
-      
-      return {
-        _id: statsId,
-        ...initialStats,
-      };
+          const statsId = await ctx.db.insert("gameStats", initialStats);
+          
+          return {
+            _id: statsId,
+            ...initialStats,
+          };
+        } else {
+          // Use optimistic concurrency control
+          const currentVersion = existingStats.updatedAt;
+
+          const updatedStats = {
+            lightWins: existingStats.lightWins + (winner === "light" ? 1 : 0),
+            darkWins: existingStats.darkWins + (winner === "dark" ? 1 : 0),
+            totalBattles: existingStats.totalBattles + 1,
+            lastBattleAt: now,
+            updatedAt: now,
+          };
+
+          await ctx.db.patch(existingStats._id, updatedStats);
+
+          return {
+            _id: existingStats._id,
+            statsId: existingStats.statsId,
+            createdAt: existingStats.createdAt,
+            ...updatedStats,
+          };
+        }
+      } catch (patchError: any) {
+        // If patch fails due to write conflict, retry
+        if (patchError?.message?.includes('Write conflict')) {
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 10));
+          continue;
+        }
+        throw patchError;
+      }
     }
-
-    // Update existing stats
-    const updatedStats = {
-      lightWins: existingStats.lightWins + (winner === "light" ? 1 : 0),
-      darkWins: existingStats.darkWins + (winner === "dark" ? 1 : 0),
-      totalBattles: existingStats.totalBattles + 1,
-      lastBattleAt: now,
-      updatedAt: now,
-    };
-
-    await ctx.db.patch(existingStats._id, updatedStats);
-
-    return {
-      _id: existingStats._id,
-      statsId: existingStats.statsId,
-      createdAt: existingStats.createdAt,
-      ...updatedStats,
-    };
+    throw new Error('Failed to update game statistics after maximum retries');
   },
 });
 

@@ -292,13 +292,172 @@ function calculateVariance(numbers: number[]): number {
 }
 
 /**
+ * Atomically increments the counter with retry logic for handling write conflicts.
+ */
+async function atomicIncrementWithRetry(ctx: any, maxRetries = 3): Promise<number> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const existingCounter = await ctx.db
+        .query("counters")
+        .withIndex("by_name", (q: any) => q.eq("name", GLOBAL_COUNTER_NAME))
+        .first();
+
+      if (!existingCounter) {
+        // Try to create new counter
+        try {
+          await ctx.db.insert("counters", {
+            name: GLOBAL_COUNTER_NAME,
+            value: 1,
+            version: 1,
+          });
+          return 1;
+        } catch (insertError) {
+          // If insert fails due to race condition, retry
+          if (attempt === maxRetries - 1) throw insertError;
+          continue;
+        }
+      } else {
+        // Use optimistic concurrency control
+        const currentVersion = existingCounter.version;
+        const newValue = existingCounter.value + 1;
+        
+        try {
+          await ctx.db.patch(existingCounter._id, {
+            value: newValue,
+            version: currentVersion + 1,
+          });
+          return newValue;
+        } catch (patchError) {
+          // If patch fails due to write conflict, retry
+          if (attempt === maxRetries - 1) throw patchError;
+          // Add exponential backoff
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 10));
+          continue;
+        }
+      }
+    } catch (error) {
+      if (attempt === maxRetries - 1) throw error;
+      // Add exponential backoff
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 10));
+    }
+  }
+  throw new Error('Failed to increment after maximum retries');
+}
+
+/**
+ * Atomically decrements the counter with retry logic for handling write conflicts.
+ */
+async function atomicDecrementWithRetry(ctx: any, maxRetries = 3): Promise<number> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const existingCounter = await ctx.db
+        .query("counters")
+        .withIndex("by_name", (q: any) => q.eq("name", GLOBAL_COUNTER_NAME))
+        .first();
+
+      if (!existingCounter) {
+        // Try to create new counter with negative value
+        try {
+          await ctx.db.insert("counters", {
+            name: GLOBAL_COUNTER_NAME,
+            value: -1,
+            version: 1,
+          });
+          return -1;
+        } catch (insertError) {
+          // If insert fails due to race condition, retry
+          if (attempt === maxRetries - 1) throw insertError;
+          continue;
+        }
+      } else {
+        // Use optimistic concurrency control
+        const currentVersion = existingCounter.version;
+        const newValue = existingCounter.value - 1;
+        
+        try {
+          await ctx.db.patch(existingCounter._id, {
+            value: newValue,
+            version: currentVersion + 1,
+          });
+          return newValue;
+        } catch (patchError) {
+          // If patch fails due to write conflict, retry
+          if (attempt === maxRetries - 1) throw patchError;
+          // Add exponential backoff
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 10));
+          continue;
+        }
+      }
+    } catch (error) {
+      if (attempt === maxRetries - 1) throw error;
+      // Add exponential backoff
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 10));
+    }
+  }
+  throw new Error('Failed to decrement after maximum retries');
+}
+
+/**
+ * Atomically resets the counter to zero with retry logic for handling write conflicts.
+ */
+async function atomicResetWithRetry(ctx: any, maxRetries = 3): Promise<{ previousValue: number; newValue: number }> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const existingCounter = await ctx.db
+        .query("counters")
+        .withIndex("by_name", (q: any) => q.eq("name", GLOBAL_COUNTER_NAME))
+        .first();
+
+      if (!existingCounter) {
+        // Try to create new counter with zero value
+        try {
+          await ctx.db.insert("counters", {
+            name: GLOBAL_COUNTER_NAME,
+            value: 0,
+            version: 1,
+          });
+          return { previousValue: 0, newValue: 0 };
+        } catch (insertError) {
+          // If insert fails due to race condition, retry
+          if (attempt === maxRetries - 1) throw insertError;
+          continue;
+        }
+      } else {
+        // Use optimistic concurrency control
+        const currentVersion = existingCounter.version;
+        const previousValue = existingCounter.value;
+        
+        try {
+          await ctx.db.patch(existingCounter._id, {
+            value: 0,
+            version: currentVersion + 1,
+          });
+          return { previousValue, newValue: 0 };
+        } catch (patchError) {
+          // If patch fails due to write conflict, retry
+          if (attempt === maxRetries - 1) throw patchError;
+          // Add exponential backoff
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 10));
+          continue;
+        }
+      }
+    } catch (error) {
+      if (attempt === maxRetries - 1) throw error;
+      // Add exponential backoff
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 10));
+    }
+  }
+  throw new Error('Failed to reset after maximum retries');
+}
+
+/**
  * Securely increments the global counter by 1 with comprehensive security validation.
  *
  * This mutation performs server-side security validation including:
  * - Rate limiting (max 1 operation per 50ms)
  * - Automated behavior detection
  * - Input validation and sanitization
- * - Comprehensive audit logging
+ * - Optimistic concurrency control with retry logic
  *
  * @param fingerprint - Client fingerprint for tracking
  * @param clientTimestamp - Client-provided timestamp for validation
@@ -320,32 +479,9 @@ export const secureIncrement = mutation({
       // Enhanced security validation with progressive rate limiting
       await validateEnhancedOperation(ctx, fingerprint, clientTimestamp, 'increment');
 
-      // Get the current counter or create it if it doesn't exist
-      const existingCounter = await ctx.db
-        .query("counters")
-        .withIndex("by_name", (q) => q.eq("name", GLOBAL_COUNTER_NAME))
-        .first();
-
-      if (!existingCounter) {
-        // Initialize counter if it doesn't exist
-        previousValue = 0;
-        newValue = 1;
-        await ctx.db.insert("counters", {
-          name: GLOBAL_COUNTER_NAME,
-          value: newValue,
-          version: 1,
-        });
-      } else {
-        // Atomically increment the counter
-        previousValue = existingCounter.value;
-        newValue = existingCounter.value + 1;
-        await ctx.db.patch(existingCounter._id, {
-          value: newValue,
-          // Only increment version every 10 operations to reduce bandwidth
-          version: existingCounter.version + (existingCounter.value % 10 === 0 ? 1 : 0),
-        });
-      }
-
+      // Use atomic increment with retry logic
+      newValue = await atomicIncrementWithRetry(ctx);
+      previousValue = newValue - 1;
       success = true;
       return newValue;
     } catch (error) {
@@ -391,32 +527,9 @@ export const secureDecrement = mutation({
       // Enhanced security validation with progressive rate limiting
       await validateEnhancedOperation(ctx, fingerprint, clientTimestamp, 'decrement');
 
-      // Get the current counter or create it if it doesn't exist
-      const existingCounter = await ctx.db
-        .query("counters")
-        .withIndex("by_name", (q) => q.eq("name", GLOBAL_COUNTER_NAME))
-        .first();
-
-      if (!existingCounter) {
-        // Initialize counter if it doesn't exist
-        previousValue = 0;
-        newValue = -1;
-        await ctx.db.insert("counters", {
-          name: GLOBAL_COUNTER_NAME,
-          value: newValue,
-          version: 1,
-        });
-      } else {
-        // Atomically decrement the counter
-        previousValue = existingCounter.value;
-        newValue = existingCounter.value - 1;
-        await ctx.db.patch(existingCounter._id, {
-          value: newValue,
-          // Only increment version every 10 operations to reduce bandwidth
-          version: existingCounter.version + (existingCounter.value % 10 === 0 ? 1 : 0),
-        });
-      }
-
+      // Use atomic decrement with retry logic
+      newValue = await atomicDecrementWithRetry(ctx);
+      previousValue = newValue + 1;
       success = true;
       return newValue;
     } catch (error) {
@@ -517,31 +630,10 @@ export const secureReset = mutation({
       // Enhanced security validation with progressive rate limiting
       await validateEnhancedOperation(ctx, fingerprint, clientTimestamp, 'reset');
 
-      const existingCounter = await ctx.db
-        .query("counters")
-        .withIndex("by_name", (q) => q.eq("name", GLOBAL_COUNTER_NAME))
-        .first();
-
-      if (!existingCounter) {
-        // Create counter with value 0
-        previousValue = 0;
-        newValue = 0;
-        await ctx.db.insert("counters", {
-          name: GLOBAL_COUNTER_NAME,
-          value: 0,
-          version: 1,
-        });
-      } else {
-        // Reset existing counter to 0
-        previousValue = existingCounter.value;
-        newValue = 0;
-        await ctx.db.patch(existingCounter._id, {
-          value: 0,
-          // Reset operation always increments version for tracking
-          version: existingCounter.version + 1,
-        });
-      }
-
+      // Use atomic reset with retry logic
+      const result = await atomicResetWithRetry(ctx);
+      previousValue = result.previousValue;
+      newValue = result.newValue;
       success = true;
       return newValue;
     } catch (error) {
